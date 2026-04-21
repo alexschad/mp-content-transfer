@@ -1,0 +1,27 @@
+
+.env
+.venv/
+venv/
+env/
+
+__pycache__/
+*.py[cod]
+
+.DS_Store
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+dist/
+build/
+*.egg-info/
+
+# Local export/import artifacts
+bundle/
+bundles/
+output/
+exports/
+imports/
+files/
+manifest.json
