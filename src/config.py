@@ -10,6 +10,7 @@ class EndpointConfig:
     base_url: str
     instance_id: str
     api_key: str
+    api_secret: str
     requests_per_second: float
 
 
@@ -27,6 +28,7 @@ class Settings:
     target: EndpointConfig
     retry: RetryConfig
     export_limit: int | None
+    auth_provider: str
 
 
 def load_settings(env_file: str | Path = ".env") -> Settings:
@@ -41,6 +43,7 @@ def load_settings(env_file: str | Path = ".env") -> Settings:
             backoff_jitter_seconds=float(os.environ.get("MP_BACKOFF_JITTER_SECONDS", "0.25")),
         ),
         export_limit=_optional_int("MP_EXPORT_LIMIT"),
+        auth_provider=os.environ.get("MP_AUTH_PROVIDER", "https://go.vanguardistas.net").rstrip("/"),
     )
 
 
@@ -50,6 +53,7 @@ def _load_endpoint(prefix: str) -> EndpointConfig:
         base_url=base_url,
         instance_id=_required(f"{prefix}_INSTANCE_ID"),
         api_key=_required(f"{prefix}_API_KEY"),
+        api_secret=_required(f"{prefix}_API_SECRET"),
         requests_per_second=float(os.environ.get(f"{prefix}_REQUESTS_PER_SECOND", "1.0")),
     )
 
@@ -76,4 +80,4 @@ def _load_dotenv_file(path: Path) -> None:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, value = stripped.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
+        os.environ[key.strip()] = value.strip()

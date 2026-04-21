@@ -19,8 +19,8 @@ CONTENT_LIST_FIELDS = [
 
 LOCATION_LIST_FIELDS = [
     "uuid",
-    "modified",
-    "created",
+    # "modified",
+    # "created",
 ]
 
 @dataclass
@@ -31,7 +31,8 @@ class Exporter:
     limit: int | None = None
 
     def __post_init__(self) -> None:
-        self._seeded_count = 0
+        self._seeded_content_count = 0
+        self._seeded_location_count = 0
 
     def export(self) -> Path:
         manifest = create_manifest(self.from_date, self.client.endpoint.instance_id)
@@ -57,16 +58,15 @@ class Exporter:
             params={
                 "fields": "-".join(CONTENT_LIST_FIELDS),
                 "created": self._created_period_filter(),
+                "order": "title.desc",
             },
         )
         for row in rows:
-            if self._limit_reached():
+            if self._limit_reached("content"):
                 return
             values = dict(zip(CONTENT_LIST_FIELDS, row))
-            if values["content_type"] not in {"article", "event", "roundup_location", "roundup_content"}:
-                continue
             state.enqueue("content", values["uuid"])
-            self._seeded_count += 1
+            self._seeded_content_count += 1
 
     def _seed_locations(self, state: GraphState) -> None:
         rows = self.client.iter_collection(
@@ -74,17 +74,24 @@ class Exporter:
             params={
                 "fields": "-".join(LOCATION_LIST_FIELDS),
                 "created": self._created_period_filter(),
+                "order": "title.desc",
             },
         )
         for row in rows:
-            if self._limit_reached():
+            if self._limit_reached("location"):
                 return
             values = dict(zip(LOCATION_LIST_FIELDS, row))
             state.enqueue("location", values["uuid"])
-            self._seeded_count += 1
+            self._seeded_location_count += 1
 
-    def _limit_reached(self) -> bool:
-        return self.limit is not None and self._seeded_count >= self.limit
+    def _limit_reached(self, resource_type: str) -> bool:
+        if self.limit is None:
+            return False
+        if resource_type == "content":
+            return self._seeded_content_count >= self.limit
+        if resource_type == "location":
+            return self._seeded_location_count >= self.limit
+        return False
 
     def _created_period_filter(self) -> str:
         return f"{self.from_date}T00:00:00_"

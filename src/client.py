@@ -36,10 +36,12 @@ class MPClient:
     endpoint: EndpointConfig
     retry: RetryConfig
     limiter: RateLimiter
+    auth_provider: str
+    access_token: str | None = None
 
     @classmethod
-    def create(cls, endpoint: EndpointConfig, retry: RetryConfig) -> "MPClient":
-        return cls(endpoint=endpoint, retry=retry, limiter=RateLimiter(endpoint.requests_per_second))
+    def create(cls, endpoint: EndpointConfig, retry: RetryConfig, auth_provider: str) -> "MPClient":
+        return cls(endpoint=endpoint, retry=retry, limiter=RateLimiter(endpoint.requests_per_second), auth_provider=auth_provider)
 
     def get(self, path: str, params: dict[str, Any] | None = None, ok_statuses: tuple[int, ...] = (200,)) -> Response:
         return self._request("GET", path, params=params, ok_statuses=ok_statuses)
@@ -71,8 +73,10 @@ class MPClient:
         params = dict(params or {})
         params.setdefault("page", 1)
         params.setdefault("rpp", 20)
+        print (f"Iterating collection at {path} with params {params}")
         while True:
             data = self.get_json(path, params=params)
+            print (f"Received page {params['page']} with {len(data.get('items', []))} items")
             for item in data.get("items", []):
                 yield item
             next_fragment = data.get("next")
@@ -81,7 +85,7 @@ class MPClient:
             params = _merge_next_params(next_fragment, params)
 
     def download(self, url: str) -> bytes:
-        return self._request("GET", url, absolute=True, ok_statuses=(200,)).content
+        return self._request("GET", url, absolute=True, include_auth=True, ok_statuses=(200,)).content
 
     def _request(
         self,
@@ -93,9 +97,12 @@ class MPClient:
         headers: dict[str, str] | None = None,
         ok_statuses: tuple[int, ...] = (200,),
         absolute: bool = False,
+        include_auth: bool = False,
     ) -> Response:
         url = path if absolute else f"{self.endpoint.base_url}/{self.endpoint.instance_id}{path}"
-        merged_headers = {"Authorization": f"bearer {self.endpoint.api_key}"}
+        merged_headers = dict(headers or {})
+        if not absolute or include_auth:
+            merged_headers["Authorization"] = f"bearer {self._get_access_token()}"
         if headers:
             merged_headers.update(headers)
         attempt = 0
@@ -104,7 +111,10 @@ class MPClient:
             response = self._send(method=method, url=url, params=params, json_body=json, data=data, headers=merged_headers)
             if response.status_code in ok_statuses:
                 return response
-            if response.status_code not in {429, 500, 502, 503, 504} or attempt >= self.retry.retry_count:
+            if response.status_code == 401 and (not absolute or include_auth):
+                self.access_token = None
+                merged_headers["Authorization"] = f"bearer {self._get_access_token()}"
+            if response.status_code not in {401, 429, 500, 502, 503, 504} or attempt >= self.retry.retry_count:
                 raise ApiError(f"{method} {url} failed with {response.status_code}: {response.text[:500]}")
             delay = min(self.retry.backoff_base_seconds * (2**attempt), self.retry.backoff_max_seconds)
             delay += random.uniform(0, self.retry.backoff_jitter_seconds)
@@ -151,6 +161,33 @@ class MPClient:
             )
         except URLError as exc:
             raise ApiError(f"{method} {url} failed: {exc}") from exc
+
+    def _get_access_token(self) -> str:
+        if self.access_token:
+            return self.access_token
+        payload = urlencode(
+            {
+                "grant_type": "client_credentials",
+                "api_key": self.endpoint.api_key,
+                "api_secret": self.endpoint.api_secret,
+            }
+        ).encode("utf-8")
+        response = self._send(
+            method="POST",
+            url=f"{self.auth_provider}/oauth/token",
+            params=None,
+            json_body=None,
+            data=payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if response.status_code != 200:
+            raise ApiError(f"Token request failed with {response.status_code}: {response.text[:500]}")
+        token_data = response.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise ApiError("Token response did not include access_token")
+        self.access_token = access_token
+        return access_token
 
 
 def _merge_next_params(next_fragment: str, current: dict[str, Any]) -> dict[str, Any]:

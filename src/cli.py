@@ -26,7 +26,7 @@ def main() -> None:
     settings = load_settings()
 
     if args.command == "export":
-        client = MPClient.create(settings.source, settings.retry)
+        client = MPClient.create(settings.source, settings.retry, settings.auth_provider)
         exporter = Exporter(
             client=client,
             output_dir=Path(args.output),
@@ -37,7 +37,7 @@ def main() -> None:
         print(f"Exported bundle to {manifest_path}")
         return
 
-    client = MPClient.create(settings.target, settings.retry)
+    client = MPClient.create(settings.target, settings.retry, settings.auth_provider)
     bundle = load_bundle(Path(args.input))
     summary = Importer(client=client, bundle=bundle).import_bundle()
     print(
