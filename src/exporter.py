@@ -172,6 +172,9 @@ class Exporter:
         manifest["files"][uuid] = data
         output_path = self.output_dir / relative_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        if output_path.exists():
+            self._export_object_tags(resource_path=f"/files/{uuid}/tags", object_type="file", object_uuid=uuid, manifest=manifest, state=state)
+            return
         try:
             file_bytes = self.client.download(data["download_url"])
             output_path.write_bytes(file_bytes)
