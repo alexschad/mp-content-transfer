@@ -31,9 +31,11 @@ class FakeClient:
                 "roundup_content_targets": [{"target_uuid": "content-2"}],
                 "roundup_locations": [{"target_uuid": "location-1"}],
             },
+            "/content/content-1/related_links": {"items": []},
             "/content/content-1/tags": {"items": []},
             "/content/content-1/slots": {"items": []},
             "/content/content-2": {"uuid": "content-2", "content_type": "article"},
+            "/content/content-2/related_links": {"items": []},
             "/content/content-2/tags": {"items": []},
             "/content/content-2/slots": {"items": []},
             "/locations/location-1": {"uuid": "location-1"},
@@ -127,9 +129,11 @@ class ExporterGraphTest(TestCase):
             def get_json(self, path: str, params=None, ok_statuses=(200,)):
                 mapping = {
                     "/content/content-1": {"uuid": "content-1", "content_type": "article"},
+                    "/content/content-1/related_links": {"items": []},
                     "/content/content-1/tags": {"items": []},
                     "/content/content-1/slots": {"items": []},
                     "/content/content-2": {"uuid": "content-2", "content_type": "article"},
+                    "/content/content-2/related_links": {"items": []},
                     "/content/content-2/tags": {"items": []},
                     "/content/content-2/slots": {"items": []},
                     "/locations/location-1": {"uuid": "location-1"},
@@ -148,3 +152,31 @@ class ExporterGraphTest(TestCase):
             self.assertNotIn("content-2", manifest)
             self.assertIn("location-1", manifest)
             self.assertNotIn("location-2", manifest)
+
+    def test_exporter_exports_related_links_and_enqueues_content_targets(self) -> None:
+        class RelatedLinkClient(FakeClient):
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/content/content-1": {"uuid": "content-1", "content_type": "article"},
+                    "/content/content-1/related_links": {
+                        "items": [
+                            {"type": "url", "ord": 0, "text": "External", "link_url": "https://example.com"},
+                            {"type": "content", "ord": 1, "uuid": "content-99", "url": "https://api.metropublisher.com/123/content/content-99"},
+                        ]
+                    },
+                    "/content/content-1/tags": {"items": []},
+                    "/content/content-1/slots": {"items": []},
+                    "/content/content-99": {"uuid": "content-99", "content_type": "article"},
+                    "/content/content-99/related_links": {"items": []},
+                    "/content/content-99/tags": {"items": []},
+                    "/content/content-99/slots": {"items": []},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=RelatedLinkClient(), output_dir=tmp_path, from_date="2026-01-01")
+            export_path = exporter.export()
+            export_data = export_path.read_text(encoding="utf-8")
+            self.assertIn('"related_links"', export_data)
+            self.assertIn("content-99", export_data)

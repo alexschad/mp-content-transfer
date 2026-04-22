@@ -143,6 +143,7 @@ class Exporter:
             state.enqueue("content", target_uuid)
         manifest["relationships"]["roundups"]["content_to_locations"][uuid] = data.get("roundup_locations", []) or []
         manifest["relationships"]["roundups"]["content_to_content"][uuid] = data.get("roundup_content_targets", []) or []
+        self._export_related_links(uuid, manifest, state)
         self._export_content_tags(uuid, manifest, state)
         self._export_slots(uuid, manifest, state)
 
@@ -185,6 +186,20 @@ class Exporter:
 
     def _export_content_tags(self, uuid: str, manifest: dict, state: GraphState) -> None:
         self._export_object_tags(resource_path=f"/content/{uuid}/tags", object_type="content", object_uuid=uuid, manifest=manifest, state=state)
+
+    def _export_related_links(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        response = self.client.get_json(f"/content/{uuid}/related_links", ok_statuses=(200, 404))
+        if not response or "items" not in response:
+            manifest["relationships"]["related_links"][uuid] = []
+            return
+        items = response.get("items", [])
+        manifest["relationships"]["related_links"][uuid] = items
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "content":
+                continue
+            state.enqueue("content", item.get("uuid") or uuid_from_resource_url(item.get("url")))
 
     def _export_object_tags(
         self,
