@@ -57,7 +57,7 @@ class Exporter:
                 save_bundle(manifest, self.output_dir)
             except ApiError:
                 save_bundle(manifest, self.output_dir)
-                print(f"Checkpoint saved to {self.output_dir / 'manifest.json'}")
+                print(f"Checkpoint saved to {self.output_dir / 'export.json'}")
                 print("Retry the same export with --resume and the same --output directory.")
                 raise
         return save_bundle(manifest, self.output_dir)

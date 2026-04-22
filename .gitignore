@@ -24,4 +24,4 @@ output/
 exports/
 imports/
 files/
-manifest.json
+export.json

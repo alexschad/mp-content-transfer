@@ -35,8 +35,8 @@ def main() -> None:
             limit=args.limit if args.limit is not None else settings.export_limit,
             resume=args.resume,
         )
-        manifest_path = exporter.export()
-        print(f"Exported bundle to {manifest_path}")
+        export_path = exporter.export()
+        print(f"Exported bundle to {export_path}")
         return
 
     client = MPClient.create(settings.target, settings.retry, settings.auth_provider)

@@ -31,18 +31,18 @@ def create_manifest(from_date: str, source_instance_id: str) -> dict:
 def save_bundle(manifest: dict, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "files").mkdir(exist_ok=True)
-    manifest_path = output_dir / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    return manifest_path
+    export_path = output_dir / "export.json"
+    export_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return export_path
 
 
 def load_manifest_if_exists(output_dir: Path) -> dict | None:
-    manifest_path = output_dir / "manifest.json"
-    if not manifest_path.exists():
+    export_path = output_dir / "export.json"
+    if not export_path.exists():
         return None
-    return json.loads(manifest_path.read_text(encoding="utf-8"))
+    return json.loads(export_path.read_text(encoding="utf-8"))
 
 
 def load_bundle(input_dir: Path) -> Bundle:
-    manifest = json.loads((input_dir / "manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads((input_dir / "export.json").read_text(encoding="utf-8"))
     return Bundle(manifest=manifest, root=input_dir)
