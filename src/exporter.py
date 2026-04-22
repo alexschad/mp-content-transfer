@@ -161,8 +161,31 @@ class Exporter:
         if uuid in manifest["tags"]:
             return
         data = self.client.get_json(f"/tags/{uuid}")
+        data["categories"] = self._export_tag_categories(uuid)
         manifest["tags"][uuid] = data
         state.enqueue("file", data.get("feature_image_uuid") or uuid_from_resource_url(data.get("feature_image_url")))
+
+    def _export_tag_categories(self, uuid: str) -> list[dict[str, str | None]]:
+        rows = self.client.iter_collection(
+            f"/tags/{uuid}/categories",
+            params={"fields": "uuid-title-url", "order": "title"},
+        )
+        categories: list[dict[str, str | None]] = []
+        for row in rows:
+            if not isinstance(row, (list, tuple)):
+                continue
+            category_uuid = row[0] if len(row) > 0 else None
+            title = row[1] if len(row) > 1 else None
+            url = row[2] if len(row) > 2 else None
+            categories.append(
+                {
+                    "tag_uuid": uuid,
+                    "uuid": category_uuid,
+                    "title": title,
+                    "url": url,
+                }
+            )
+        return categories
 
     def _export_file(self, uuid: str, manifest: dict, state: GraphState) -> None:
         if uuid in manifest["files"]:

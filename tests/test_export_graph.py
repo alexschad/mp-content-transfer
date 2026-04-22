@@ -21,6 +21,8 @@ class FakeClient:
             return [["content-1", "roundup_content", "2026-01-02T00:00:00", "2026-01-01T00:00:00"]]
         if path == "/locations":
             return []
+        if path.endswith("/categories"):
+            return []
         return []
 
     def get_json(self, path: str, params=None, ok_statuses=(200,)):
@@ -184,3 +186,39 @@ class ExporterGraphTest(TestCase):
             self.assertIn('"related_links"', export_data)
             self.assertIn("content-99", export_data)
             self.assertIn("location-77", export_data)
+
+    def test_exporter_adds_tag_categories_with_uuid_title_url_and_tag_uuid(self) -> None:
+        class TagCategoryClient(FakeClient):
+            def iter_collection(self, path: str, params=None):
+                self.collection_calls.append((path, params))
+                if path == "/content":
+                    return [["content-1", "article", "2026-01-02T00:00:00", "2026-01-01T00:00:00"]]
+                if path == "/locations":
+                    return []
+                if path == "/tags/tag-1/categories":
+                    return [
+                        ["cat-1", "People", "https://api.metropublisher.com/123/tags/categories/cat-1"],
+                        ["cat-2", "Writers", "https://api.metropublisher.com/123/tags/categories/cat-2"],
+                    ]
+                return []
+
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/content/content-1": {"uuid": "content-1", "content_type": "article"},
+                    "/content/content-1/related_links": {"items": []},
+                    "/content/content-1/tags": {"items": [{"uuid": "tag-1", "predicate": "describes", "title": "Tag 1"}]},
+                    "/content/content-1/slots": {"items": []},
+                    "/tags/tag-1": {"uuid": "tag-1", "title": "Tag 1"},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=TagCategoryClient(), output_dir=tmp_path, from_date="2026-01-01")
+            export_path = exporter.export()
+            export_data = export_path.read_text(encoding="utf-8")
+            self.assertIn('"categories"', export_data)
+            self.assertIn("cat-1", export_data)
+            self.assertIn("People", export_data)
+            self.assertIn("https://api.metropublisher.com/123/tags/categories/cat-1", export_data)
+            self.assertIn('"tag_uuid": "tag-1"', export_data)
