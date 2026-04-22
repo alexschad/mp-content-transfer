@@ -6,10 +6,11 @@ from pathlib import Path
 from .types import Bundle
 
 
-def create_manifest(from_date: str, source_instance_id: str) -> dict:
+def create_manifest(from_date: str | None, to_date: str | None, source_instance_id: str) -> dict:
     return {
         "meta": {
             "from_date": from_date,
+            "to_date": to_date,
             "source_instance_id": source_instance_id,
         },
         "content": {},

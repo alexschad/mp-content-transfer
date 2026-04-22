@@ -73,10 +73,10 @@ class MPClient:
         params = dict(params or {})
         params.setdefault("page", 1)
         params.setdefault("rpp", 20)
-        print (f"Iterating collection at {path} with params {params}")
+        # print (f"Iterating collection at {path} with params {params}")
         while True:
             data = self.get_json(path, params=params)
-            print (f"Received page {params['page']} with {len(data.get('items', []))} items")
+            # print (f"Received page {params['page']} with {len(data.get('items', []))} items")
             for item in data.get("items", []):
                 yield item
             next_fragment = data.get("next")

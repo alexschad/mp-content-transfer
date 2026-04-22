@@ -88,6 +88,96 @@ class ExporterGraphTest(TestCase):
             ),
         )
 
+    def test_exporter_uses_bounded_created_filter_when_from_and_to_dates_are_set(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            client = FakeClient()
+            exporter = Exporter(
+                client=client,
+                output_dir=tmp_path,
+                from_date="2026-01-01",
+                to_date="2026-01-31",
+            )
+            exporter.export()
+        self.assertEqual(
+            client.collection_calls[0],
+            (
+                "/content",
+                {
+                    "fields": "uuid-content_type-modified-created",
+                    "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
+                    "order": "title.desc",
+                },
+            ),
+        )
+        self.assertEqual(
+            client.collection_calls[1],
+            (
+                "/locations",
+                {
+                    "fields": "uuid",
+                    "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
+                    "order": "title.desc",
+                },
+            ),
+        )
+
+    def test_exporter_uses_open_ended_created_filter_when_only_to_date_is_set(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            client = FakeClient()
+            exporter = Exporter(client=client, output_dir=tmp_path, to_date="2026-01-31")
+            exporter.export()
+        self.assertEqual(
+            client.collection_calls[0],
+            (
+                "/content",
+                {
+                    "fields": "uuid-content_type-modified-created",
+                    "created": "_2026-01-31T00:00:00",
+                    "order": "title.desc",
+                },
+            ),
+        )
+        self.assertEqual(
+            client.collection_calls[1],
+            (
+                "/locations",
+                {
+                    "fields": "uuid",
+                    "created": "_2026-01-31T00:00:00",
+                    "order": "title.desc",
+                },
+            ),
+        )
+
+    def test_exporter_omits_created_filter_when_no_dates_are_set(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            client = FakeClient()
+            exporter = Exporter(client=client, output_dir=tmp_path)
+            exporter.export()
+        self.assertEqual(
+            client.collection_calls[0],
+            (
+                "/content",
+                {
+                    "fields": "uuid-content_type-modified-created",
+                    "order": "title.desc",
+                },
+            ),
+        )
+        self.assertEqual(
+            client.collection_calls[1],
+            (
+                "/locations",
+                {
+                    "fields": "uuid",
+                    "order": "title.desc",
+                },
+            ),
+        )
+
     def test_exporter_limit_applies_only_to_top_level_seed_items(self) -> None:
         class LimitedFakeClient(FakeClient):
             def iter_collection(self, path: str, params=None):

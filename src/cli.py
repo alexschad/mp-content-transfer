@@ -15,7 +15,8 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     export_parser = subparsers.add_parser("export")
-    export_parser.add_argument("--from-date", required=True)
+    export_parser.add_argument("--from-date")
+    export_parser.add_argument("--to-date")
     export_parser.add_argument("--output", required=True)
     export_parser.add_argument("--limit", type=int)
     export_parser.add_argument("--resume", action="store_true")
@@ -32,6 +33,7 @@ def main() -> None:
             client=client,
             output_dir=Path(args.output),
             from_date=args.from_date,
+            to_date=args.to_date,
             limit=args.limit if args.limit is not None else settings.export_limit,
             resume=args.resume,
         )

@@ -26,13 +26,15 @@ python3 mp_content_transfer.py --help
 3. Export:
 
 ```bash
-python3 mp_content_transfer.py export --from-date 2026-01-01 --output ./bundle --limit 100
+python3 mp_content_transfer.py export --from-date 2026-01-01 --to-date 2026-01-31 --output ./bundle --limit 100
 ```
+
+`--from-date` and `--to-date` are both optional. If you pass one or both, the exporter sends the corresponding MetroPublisher `created` period filter. If you omit both, it exports all top-level seed content and locations.
 
 If an export is interrupted, rerun it against the same output directory with:
 
 ```bash
-python3 mp_content_transfer.py export --from-date 2026-01-01 --output ./bundle --resume
+python3 mp_content_transfer.py export --from-date 2026-01-01 --to-date 2026-01-31 --output ./bundle --resume
 ```
 
 4. Import:

@@ -27,7 +27,8 @@ LOCATION_LIST_FIELDS = [
 class Exporter:
     client: MPClient
     output_dir: Path
-    from_date: str
+    from_date: str | None = None
+    to_date: str | None = None
     limit: int | None = None
     resume: bool = False
 
@@ -67,7 +68,7 @@ class Exporter:
             existing = load_manifest_if_exists(self.output_dir)
             if existing is not None:
                 return existing
-        return create_manifest(self.from_date, self.client.endpoint.instance_id)
+        return create_manifest(self.from_date, self.to_date, self.client.endpoint.instance_id)
 
     def _already_exported(self, resource_type: str, uuid: str, manifest: dict) -> bool:
         mapping = {
@@ -82,14 +83,14 @@ class Exporter:
         return uuid in manifest.get(manifest_key, {})
 
     def _seed_content(self, state: GraphState) -> None:
-        rows = self.client.iter_collection(
-            "/content",
-            params={
-                "fields": "-".join(CONTENT_LIST_FIELDS),
-                "created": self._created_period_filter(),
-                "order": "title.desc",
-            },
-        )
+        params = {
+            "fields": "-".join(CONTENT_LIST_FIELDS),
+            "order": "title.desc",
+        }
+        created_filter = self._created_period_filter()
+        if created_filter is not None:
+            params["created"] = created_filter
+        rows = self.client.iter_collection("/content", params=params)
         for row in rows:
             if self._limit_reached("content"):
                 return
@@ -98,14 +99,14 @@ class Exporter:
             self._seeded_content_count += 1
 
     def _seed_locations(self, state: GraphState) -> None:
-        rows = self.client.iter_collection(
-            "/locations",
-            params={
-                "fields": "-".join(LOCATION_LIST_FIELDS),
-                "created": self._created_period_filter(),
-                "order": "title.desc",
-            },
-        )
+        params = {
+            "fields": "-".join(LOCATION_LIST_FIELDS),
+            "order": "title.desc",
+        }
+        created_filter = self._created_period_filter()
+        if created_filter is not None:
+            params["created"] = created_filter
+        rows = self.client.iter_collection("/locations", params=params)
         for row in rows:
             if self._limit_reached("location"):
                 return
@@ -122,8 +123,12 @@ class Exporter:
             return self._seeded_location_count >= self.limit
         return False
 
-    def _created_period_filter(self) -> str:
-        return f"{self.from_date}T00:00:00_"
+    def _created_period_filter(self) -> str | None:
+        if not self.from_date and not self.to_date:
+            return None
+        start = f"{self.from_date}T00:00:00" if self.from_date else ""
+        end = f"{self.to_date}T00:00:00" if self.to_date else ""
+        return f"{start}_{end}"
 
     def _export_content(self, uuid: str, manifest: dict, state: GraphState) -> None:
         if uuid in manifest["content"]:
