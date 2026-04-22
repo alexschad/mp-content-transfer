@@ -162,6 +162,7 @@ class ExporterGraphTest(TestCase):
                         "items": [
                             {"type": "url", "ord": 0, "text": "External", "link_url": "https://example.com"},
                             {"type": "content", "ord": 1, "uuid": "content-99", "url": "https://api.metropublisher.com/123/content/content-99"},
+                            {"type": "location", "ord": 2, "uuid": "location-77", "url": "https://api.metropublisher.com/123/locations/location-77"},
                         ]
                     },
                     "/content/content-1/tags": {"items": []},
@@ -170,6 +171,8 @@ class ExporterGraphTest(TestCase):
                     "/content/content-99/related_links": {"items": []},
                     "/content/content-99/tags": {"items": []},
                     "/content/content-99/slots": {"items": []},
+                    "/locations/location-77": {"uuid": "location-77"},
+                    "/locations/location-77/tags": {"items": []},
                 }
                 return mapping.get(path, {"items": []})
 
@@ -180,3 +183,4 @@ class ExporterGraphTest(TestCase):
             export_data = export_path.read_text(encoding="utf-8")
             self.assertIn('"related_links"', export_data)
             self.assertIn("content-99", export_data)
+            self.assertIn("location-77", export_data)

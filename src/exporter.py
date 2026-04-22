@@ -197,9 +197,12 @@ class Exporter:
         for item in items:
             if not isinstance(item, dict):
                 continue
-            if item.get("type") != "content":
-                continue
-            state.enqueue("content", item.get("uuid") or uuid_from_resource_url(item.get("url")))
+            link_type = item.get("type")
+            target_uuid = item.get("uuid")
+            if link_type == "content":
+                state.enqueue("content", target_uuid)
+            elif link_type == "location":
+                state.enqueue("location", target_uuid)
 
     def _export_object_tags(
         self,
