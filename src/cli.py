@@ -18,6 +18,7 @@ def main() -> None:
     export_parser.add_argument("--from-date", required=True)
     export_parser.add_argument("--output", required=True)
     export_parser.add_argument("--limit", type=int)
+    export_parser.add_argument("--resume", action="store_true")
 
     import_parser = subparsers.add_parser("import")
     import_parser.add_argument("--input", required=True)
@@ -32,6 +33,7 @@ def main() -> None:
             output_dir=Path(args.output),
             from_date=args.from_date,
             limit=args.limit if args.limit is not None else settings.export_limit,
+            resume=args.resume,
         )
         manifest_path = exporter.export()
         print(f"Exported bundle to {manifest_path}")

@@ -29,6 +29,12 @@ python3 mp_content_transfer.py --help
 python3 mp_content_transfer.py export --from-date 2026-01-01 --output ./bundle --limit 100
 ```
 
+If an export is interrupted, rerun it against the same output directory with:
+
+```bash
+python3 mp_content_transfer.py export --from-date 2026-01-01 --output ./bundle --resume
+```
+
 4. Import:
 
 ```bash

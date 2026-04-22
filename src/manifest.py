@@ -36,6 +36,13 @@ def save_bundle(manifest: dict, output_dir: Path) -> Path:
     return manifest_path
 
 
+def load_manifest_if_exists(output_dir: Path) -> dict | None:
+    manifest_path = output_dir / "manifest.json"
+    if not manifest_path.exists():
+        return None
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
 def load_bundle(input_dir: Path) -> Bundle:
     manifest = json.loads((input_dir / "manifest.json").read_text(encoding="utf-8"))
     return Bundle(manifest=manifest, root=input_dir)

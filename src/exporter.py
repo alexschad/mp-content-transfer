@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .client import ApiError, MPClient
-from .manifest import create_manifest, save_bundle
+from .manifest import create_manifest, load_manifest_if_exists, save_bundle
 from .types import GraphState
 from .utils import uuid_from_resource_url
 
@@ -29,28 +29,57 @@ class Exporter:
     output_dir: Path
     from_date: str
     limit: int | None = None
+    resume: bool = False
 
     def __post_init__(self) -> None:
         self._seeded_content_count = 0
         self._seeded_location_count = 0
 
     def export(self) -> Path:
-        manifest = create_manifest(self.from_date, self.client.endpoint.instance_id)
+        manifest = self._load_or_create_manifest()
         state = GraphState()
         self._seed_content(state)
         self._seed_locations(state)
         while state.queue:
             item = state.queue.popleft()
+            if self._already_exported(item.resource_type, item.uuid, manifest):
+                continue
             print(f"Exporting {item.resource_type} {item.uuid}")
-            if item.resource_type == "content":
-                self._export_content(item.uuid, manifest, state)
-            elif item.resource_type == "location":
-                self._export_location(item.uuid, manifest, state)
-            elif item.resource_type == "tag":
-                self._export_tag(item.uuid, manifest, state)
-            elif item.resource_type == "file":
-                self._export_file(item.uuid, manifest, state)
+            try:
+                if item.resource_type == "content":
+                    self._export_content(item.uuid, manifest, state)
+                elif item.resource_type == "location":
+                    self._export_location(item.uuid, manifest, state)
+                elif item.resource_type == "tag":
+                    self._export_tag(item.uuid, manifest, state)
+                elif item.resource_type == "file":
+                    self._export_file(item.uuid, manifest, state)
+                save_bundle(manifest, self.output_dir)
+            except ApiError:
+                save_bundle(manifest, self.output_dir)
+                print(f"Checkpoint saved to {self.output_dir / 'manifest.json'}")
+                print("Retry the same export with --resume and the same --output directory.")
+                raise
         return save_bundle(manifest, self.output_dir)
+
+    def _load_or_create_manifest(self) -> dict:
+        if self.resume:
+            existing = load_manifest_if_exists(self.output_dir)
+            if existing is not None:
+                return existing
+        return create_manifest(self.from_date, self.client.endpoint.instance_id)
+
+    def _already_exported(self, resource_type: str, uuid: str, manifest: dict) -> bool:
+        mapping = {
+            "content": "content",
+            "location": "locations",
+            "tag": "tags",
+            "file": "files",
+        }
+        manifest_key = mapping.get(resource_type)
+        if not manifest_key:
+            return False
+        return uuid in manifest.get(manifest_key, {})
 
     def _seed_content(self, state: GraphState) -> None:
         rows = self.client.iter_collection(
