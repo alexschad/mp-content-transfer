@@ -16,7 +16,6 @@ def create_manifest(from_date: str, source_instance_id: str) -> dict:
         "locations": {},
         "tags": {},
         "files": {},
-        "sections": {},
         "relationships": {
             "taggings": [],
             "content_slots": {},
