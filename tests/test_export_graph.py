@@ -19,6 +19,8 @@ class FakeClient:
         self.collection_calls.append((path, params))
         if path == "/content":
             return [["content-1", "roundup_content", "2026-01-02T00:00:00", "2026-01-01T00:00:00"]]
+        if path == "/comments":
+            return []
         if path == "/locations":
             return []
         if path.endswith("/categories"):
@@ -72,18 +74,29 @@ class ExporterGraphTest(TestCase):
                 {
                     "fields": "uuid-content_type-modified-created",
                     "created": "2026-01-01T00:00:00_",
-                    "order": "title.desc",
+                    "order": "created.asc",
                 },
             ),
         )
         self.assertEqual(
             client.collection_calls[1],
             (
+                "/comments",
+                {
+                    "fields": "uuid-created",
+                    "order": "created.asc",
+                    "created": "2026-01-01T00:00:00_",
+                },
+            ),
+        )
+        self.assertEqual(
+            client.collection_calls[2],
+            (
                 "/locations",
                 {
                     "fields": "uuid",
                     "created": "2026-01-01T00:00:00_",
-                    "order": "title.desc",
+                    "order": "created.asc",
                 },
             ),
         )
@@ -106,18 +119,29 @@ class ExporterGraphTest(TestCase):
                 {
                     "fields": "uuid-content_type-modified-created",
                     "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
-                    "order": "title.desc",
+                    "order": "created.asc",
                 },
             ),
         )
         self.assertEqual(
             client.collection_calls[1],
             (
+                "/comments",
+                {
+                    "fields": "uuid-created",
+                    "order": "created.asc",
+                    "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
+                },
+            ),
+        )
+        self.assertEqual(
+            client.collection_calls[2],
+            (
                 "/locations",
                 {
                     "fields": "uuid",
                     "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
-                    "order": "title.desc",
+                    "order": "created.asc",
                 },
             ),
         )
@@ -135,18 +159,29 @@ class ExporterGraphTest(TestCase):
                 {
                     "fields": "uuid-content_type-modified-created",
                     "created": "_2026-01-31T00:00:00",
-                    "order": "title.desc",
+                    "order": "created.asc",
                 },
             ),
         )
         self.assertEqual(
             client.collection_calls[1],
             (
+                "/comments",
+                {
+                    "fields": "uuid-created",
+                    "order": "created.asc",
+                    "created": "_2026-01-31T00:00:00",
+                },
+            ),
+        )
+        self.assertEqual(
+            client.collection_calls[2],
+            (
                 "/locations",
                 {
                     "fields": "uuid",
                     "created": "_2026-01-31T00:00:00",
-                    "order": "title.desc",
+                    "order": "created.asc",
                 },
             ),
         )
@@ -163,20 +198,66 @@ class ExporterGraphTest(TestCase):
                 "/content",
                 {
                     "fields": "uuid-content_type-modified-created",
-                    "order": "title.desc",
+                    "order": "created.asc",
                 },
             ),
         )
         self.assertEqual(
             client.collection_calls[1],
             (
-                "/locations",
+                "/comments",
                 {
-                    "fields": "uuid",
-                    "order": "title.desc",
+                    "fields": "uuid-created",
+                    "order": "created.asc",
                 },
             ),
         )
+        self.assertEqual(
+            client.collection_calls[2],
+            (
+                "/locations",
+                {
+                    "fields": "uuid",
+                    "order": "created.asc",
+                },
+            ),
+        )
+
+    def test_exporter_exports_comments_and_enqueues_parent_content(self) -> None:
+        class CommentClient(FakeClient):
+            def iter_collection(self, path: str, params=None):
+                self.collection_calls.append((path, params))
+                if path == "/content":
+                    return []
+                if path == "/comments":
+                    return [["comment-1", "2026-01-02T00:00:00"]]
+                if path == "/locations":
+                    return []
+                return []
+
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/comments/comment-1": {
+                        "uuid": "comment-1",
+                        "parent_type": "content",
+                        "parent_uuid": "content-99",
+                        "comment": "Nice article",
+                    },
+                    "/content/content-99": {"uuid": "content-99", "content_type": "article"},
+                    "/content/content-99/related_links": {"items": []},
+                    "/content/content-99/tags": {"items": []},
+                    "/content/content-99/slots": {"items": []},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=CommentClient(), output_dir=tmp_path, from_date="2026-01-01")
+            export_path = exporter.export()
+            export_data = export_path.read_text(encoding="utf-8")
+            self.assertIn('"comments"', export_data)
+            self.assertIn("comment-1", export_data)
+            self.assertIn("content-99", export_data)
 
     def test_exporter_limit_applies_only_to_top_level_seed_items(self) -> None:
         class LimitedFakeClient(FakeClient):

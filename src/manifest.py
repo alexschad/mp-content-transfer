@@ -14,6 +14,7 @@ def create_manifest(from_date: str | None, to_date: str | None, source_instance_
             "source_instance_id": source_instance_id,
         },
         "content": {},
+        "comments": {},
         "locations": {},
         "tags": {},
         "files": {},

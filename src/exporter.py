@@ -17,6 +17,11 @@ CONTENT_LIST_FIELDS = [
     "created",
 ]
 
+COMMENT_LIST_FIELDS = [
+    "uuid",
+    "created",
+]
+
 LOCATION_LIST_FIELDS = [
     "uuid",
     # "modified",
@@ -40,6 +45,7 @@ class Exporter:
         manifest = self._load_or_create_manifest()
         state = GraphState()
         self._seed_content(state)
+        self._seed_comments(state)
         self._seed_locations(state)
         while state.queue:
             item = state.queue.popleft()
@@ -49,6 +55,8 @@ class Exporter:
             try:
                 if item.resource_type == "content":
                     self._export_content(item.uuid, manifest, state)
+                elif item.resource_type == "comment":
+                    self._export_comment(item.uuid, manifest, state)
                 elif item.resource_type == "location":
                     self._export_location(item.uuid, manifest, state)
                 elif item.resource_type == "tag":
@@ -73,6 +81,7 @@ class Exporter:
     def _already_exported(self, resource_type: str, uuid: str, manifest: dict) -> bool:
         mapping = {
             "content": "content",
+            "comment": "comments",
             "location": "locations",
             "tag": "tags",
             "file": "files",
@@ -85,7 +94,7 @@ class Exporter:
     def _seed_content(self, state: GraphState) -> None:
         params = {
             "fields": "-".join(CONTENT_LIST_FIELDS),
-            "order": "title.desc",
+            "order": "created.asc",
         }
         created_filter = self._created_period_filter()
         if created_filter is not None:
@@ -101,7 +110,7 @@ class Exporter:
     def _seed_locations(self, state: GraphState) -> None:
         params = {
             "fields": "-".join(LOCATION_LIST_FIELDS),
-            "order": "title.desc",
+            "order": "created.asc",
         }
         created_filter = self._created_period_filter()
         if created_filter is not None:
@@ -113,6 +122,19 @@ class Exporter:
             values = dict(zip(LOCATION_LIST_FIELDS, row))
             state.enqueue("location", values["uuid"])
             self._seeded_location_count += 1
+
+    def _seed_comments(self, state: GraphState) -> None:
+        params = {
+            "fields": "-".join(COMMENT_LIST_FIELDS),
+            "order": "created.asc",
+        }
+        created_filter = self._created_period_filter()
+        if created_filter is not None:
+            params["created"] = created_filter
+        rows = self.client.iter_collection("/comments", params=params)
+        for row in rows:
+            values = dict(zip(COMMENT_LIST_FIELDS, row))
+            state.enqueue("comment", values["uuid"])
 
     def _limit_reached(self, resource_type: str) -> bool:
         if self.limit is None:
@@ -169,6 +191,18 @@ class Exporter:
         data["categories"] = self._export_tag_categories(uuid)
         manifest["tags"][uuid] = data
         state.enqueue("file", data.get("feature_image_uuid") or uuid_from_resource_url(data.get("feature_image_url")))
+
+    def _export_comment(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        if uuid in manifest["comments"]:
+            return
+        data = self.client.get_json(f"/comments/{uuid}")
+        manifest["comments"][uuid] = data
+        parent_type = data.get("parent_type")
+        parent_uuid = data.get("parent_uuid")
+        if parent_type == "content":
+            state.enqueue("content", parent_uuid)
+        elif parent_type == "comment":
+            state.enqueue("comment", parent_uuid)
 
     def _export_tag_categories(self, uuid: str) -> list[dict[str, str | None]]:
         rows = self.client.iter_collection(

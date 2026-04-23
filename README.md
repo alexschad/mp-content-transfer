@@ -4,7 +4,7 @@ Plain Python script for exporting MetroPublisher content bundles from one instan
 
 ## Features
 
-- exports articles, events, and locations
+- exports articles, events, locations, and comments
 - follows direct tags and image/file dependencies
 - follows `roundup_locations` and `roundup_content_targets`
 - imports conservatively and skips resources that already exist
