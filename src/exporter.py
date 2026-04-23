@@ -182,6 +182,7 @@ class Exporter:
         state.enqueue("file", data.get("thumb_uuid"))
         state.enqueue("file", uuid_from_resource_url(data.get("thumb_url")))
         state.enqueue("file", data.get("coupon_img_uuid"))
+        self._export_location_listing_images(uuid, manifest, state)
         self._export_object_tags(resource_path=f"/locations/{uuid}/tags", object_type="location", object_uuid=uuid, manifest=manifest, state=state)
 
     def _export_tag(self, uuid: str, manifest: dict, state: GraphState) -> None:
@@ -203,6 +204,18 @@ class Exporter:
             state.enqueue("content", parent_uuid)
         elif parent_type == "comment":
             state.enqueue("comment", parent_uuid)
+
+    def _export_location_listing_images(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        response = self.client.get_json(f"/locations/{uuid}/listing_images", ok_statuses=(200, 404))
+        if not response or "items" not in response:
+            manifest["relationships"]["location_listing_images"][uuid] = []
+            return
+        items = response.get("items", [])
+        manifest["relationships"]["location_listing_images"][uuid] = items
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            state.enqueue("file", item.get("uuid") or uuid_from_resource_url(item.get("url")))
 
     def _export_tag_categories(self, uuid: str) -> list[dict[str, str | None]]:
         rows = self.client.iter_collection(

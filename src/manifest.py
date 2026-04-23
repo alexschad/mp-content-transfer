@@ -21,6 +21,7 @@ def create_manifest(from_date: str | None, to_date: str | None, source_instance_
         "relationships": {
             "taggings": [],
             "related_links": {},
+            "location_listing_images": {},
             "content_slots": {},
             "roundups": {
                 "content_to_locations": {},

@@ -43,6 +43,7 @@ class FakeClient:
             "/content/content-2/tags": {"items": []},
             "/content/content-2/slots": {"items": []},
             "/locations/location-1": {"uuid": "location-1"},
+            "/locations/location-1/listing_images": {"items": []},
             "/locations/location-1/tags": {"items": []},
         }
         return mapping.get(path, {"items": []})
@@ -258,6 +259,52 @@ class ExporterGraphTest(TestCase):
             self.assertIn('"comments"', export_data)
             self.assertIn("comment-1", export_data)
             self.assertIn("content-99", export_data)
+
+    def test_exporter_exports_location_listing_images_and_enqueues_files(self) -> None:
+        class ListingImageClient(FakeClient):
+            def iter_collection(self, path: str, params=None):
+                self.collection_calls.append((path, params))
+                if path == "/content":
+                    return []
+                if path == "/comments":
+                    return []
+                if path == "/locations":
+                    return [["location-1"]]
+                return []
+
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/locations/location-1": {"uuid": "location-1"},
+                    "/locations/location-1/listing_images": {
+                        "items": [
+                            {"uuid": "file-1", "url": "https://api.metropublisher.com/123/files/file-1"},
+                            {"uuid": "file-2", "url": "https://api.metropublisher.com/123/files/file-2"},
+                        ]
+                    },
+                    "/locations/location-1/tags": {"items": []},
+                    "/files/file-1": {
+                        "uuid": "file-1",
+                        "filename": "one.jpg",
+                        "download_url": "https://cdn.example.com/one.jpg",
+                    },
+                    "/files/file-2": {
+                        "uuid": "file-2",
+                        "filename": "two.jpg",
+                        "download_url": "https://cdn.example.com/two.jpg",
+                    },
+                    "/files/file-1/tags": {"items": []},
+                    "/files/file-2/tags": {"items": []},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=ListingImageClient(), output_dir=tmp_path)
+            export_path = exporter.export()
+            export_data = export_path.read_text(encoding="utf-8")
+            self.assertIn('"location_listing_images"', export_data)
+            self.assertIn("file-1", export_data)
+            self.assertIn("file-2", export_data)
 
     def test_exporter_limit_applies_only_to_top_level_seed_items(self) -> None:
         class LimitedFakeClient(FakeClient):
