@@ -49,3 +49,16 @@ def load_manifest_if_exists(output_dir: Path) -> dict | None:
 def load_bundle(input_dir: Path) -> Bundle:
     manifest = json.loads((input_dir / "export.json").read_text(encoding="utf-8"))
     return Bundle(manifest=manifest, root=input_dir)
+
+
+def save_import_state(state: dict, root: Path) -> Path:
+    state_path = root / "import_state.json"
+    state_path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    return state_path
+
+
+def load_import_state_if_exists(root: Path) -> dict | None:
+    state_path = root / "import_state.json"
+    if not state_path.exists():
+        return None
+    return json.loads(state_path.read_text(encoding="utf-8"))
