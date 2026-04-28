@@ -38,10 +38,12 @@ class Exporter:
     resume: bool = False
 
     def __post_init__(self) -> None:
+        """Initialize per-run counters used by the top-level seed limit."""
         self._seeded_content_count = 0
         self._seeded_location_count = 0
 
     def export(self) -> Path:
+        """Export the selected seeds and recursively follow supported linked resources."""
         manifest = self._load_or_create_manifest()
         state = GraphState()
         self._seed_content(state)
@@ -72,6 +74,7 @@ class Exporter:
         return save_bundle(manifest, self.output_dir)
 
     def _load_or_create_manifest(self) -> dict:
+        """Reuse an existing export bundle when resuming, otherwise create a fresh one."""
         if self.resume:
             existing = load_manifest_if_exists(self.output_dir)
             if existing is not None:
@@ -79,6 +82,7 @@ class Exporter:
         return create_manifest(self.from_date, self.to_date, self.client.endpoint.instance_id)
 
     def _already_exported(self, resource_type: str, uuid: str, manifest: dict) -> bool:
+        """Check whether a resource already exists in the current export bundle."""
         mapping = {
             "content": "content",
             "comment": "comments",
@@ -92,6 +96,7 @@ class Exporter:
         return uuid in manifest.get(manifest_key, {})
 
     def _seed_content(self, state: GraphState) -> None:
+        """Queue top-level content seeds using the created-date window and seed limit."""
         params = {
             "fields": "-".join(CONTENT_LIST_FIELDS),
             "order": "created.asc",
@@ -108,6 +113,7 @@ class Exporter:
             self._seeded_content_count += 1
 
     def _seed_locations(self, state: GraphState) -> None:
+        """Queue top-level location seeds using the created-date window and seed limit."""
         params = {
             "fields": "-".join(LOCATION_LIST_FIELDS),
             "order": "created.asc",
@@ -124,6 +130,7 @@ class Exporter:
             self._seeded_location_count += 1
 
     def _seed_comments(self, state: GraphState) -> None:
+        """Queue top-level comments ordered from oldest to newest."""
         params = {
             "fields": "-".join(COMMENT_LIST_FIELDS),
             "order": "created.asc",
@@ -137,6 +144,7 @@ class Exporter:
             state.enqueue("comment", values["uuid"])
 
     def _limit_reached(self, resource_type: str) -> bool:
+        """Apply the separate top-level seed limit for content and locations."""
         if self.limit is None:
             return False
         if resource_type == "content":
@@ -146,6 +154,7 @@ class Exporter:
         return False
 
     def _created_period_filter(self) -> str | None:
+        """Build the MetroPublisher created-period query string from optional dates."""
         if not self.from_date and not self.to_date:
             return None
         start = f"{self.from_date}T00:00:00" if self.from_date else ""
@@ -153,6 +162,7 @@ class Exporter:
         return f"{start}_{end}"
 
     def _export_content(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Export one content object and enqueue its supported linked dependencies."""
         if uuid in manifest["content"]:
             return
         data = self.client.get_json(f"/content/{uuid}")
@@ -175,6 +185,7 @@ class Exporter:
         self._export_slots(uuid, manifest, state)
 
     def _export_location(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Export one location together with its direct files, listing images, and tags."""
         if uuid in manifest["locations"]:
             return
         data = self.client.get_json(f"/locations/{uuid}")
@@ -186,6 +197,7 @@ class Exporter:
         self._export_object_tags(resource_path=f"/locations/{uuid}/tags", object_type="location", object_uuid=uuid, manifest=manifest, state=state)
 
     def _export_tag(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Export one tag, including category metadata and feature-image references."""
         if uuid in manifest["tags"]:
             return
         data = self.client.get_json(f"/tags/{uuid}")
@@ -194,6 +206,7 @@ class Exporter:
         state.enqueue("file", data.get("feature_image_uuid") or uuid_from_resource_url(data.get("feature_image_url")))
 
     def _export_comment(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Export one comment and follow its parent content or parent comment."""
         if uuid in manifest["comments"]:
             return
         data = self.client.get_json(f"/comments/{uuid}")
@@ -206,6 +219,7 @@ class Exporter:
             state.enqueue("comment", parent_uuid)
 
     def _export_location_listing_images(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Store ordered listing-image records for a location and enqueue the image files."""
         response = self.client.get_json(f"/locations/{uuid}/listing_images", ok_statuses=(200, 404))
         if not response or "items" not in response:
             manifest["relationships"]["location_listing_images"][uuid] = []
@@ -218,6 +232,7 @@ class Exporter:
             state.enqueue("file", item.get("uuid") or uuid_from_resource_url(item.get("url")))
 
     def _export_tag_categories(self, uuid: str) -> list[dict[str, str | None]]:
+        """Collect lightweight tag category records without traversing category links further."""
         rows = self.client.iter_collection(
             f"/tags/{uuid}/categories",
             params={"fields": "uuid-title-url", "order": "title"},
@@ -240,6 +255,7 @@ class Exporter:
         return categories
 
     def _export_file(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Export file metadata, download the binary when needed, and export file tags."""
         if uuid in manifest["files"]:
             return
         data = self.client.get_json(f"/files/{uuid}")
@@ -260,9 +276,11 @@ class Exporter:
         self._export_object_tags(resource_path=f"/files/{uuid}/tags", object_type="file", object_uuid=uuid, manifest=manifest, state=state)
 
     def _export_content_tags(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Export all direct tags attached to a content object."""
         self._export_object_tags(resource_path=f"/content/{uuid}/tags", object_type="content", object_uuid=uuid, manifest=manifest, state=state)
 
     def _export_related_links(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Store related-link records and follow content or location link targets."""
         response = self.client.get_json(f"/content/{uuid}/related_links", ok_statuses=(200, 404))
         if not response or "items" not in response:
             manifest["relationships"]["related_links"][uuid] = []
@@ -287,6 +305,7 @@ class Exporter:
         manifest: dict,
         state: GraphState,
     ) -> None:
+        """Export direct tag relations for content, locations, and files."""
         response = self.client.get_json(resource_path, ok_statuses=(200, 404))
         if not response or "items" not in response:
             return
@@ -314,6 +333,7 @@ class Exporter:
             )
 
     def _export_slots(self, uuid: str, manifest: dict, state: GraphState) -> None:
+        """Export slot definitions and referenced slot media for one content object."""
         slots_data = self.client.get_json(f"/content/{uuid}/slots")
         items = slots_data.get("items") if isinstance(slots_data, dict) else None
         if items is None:

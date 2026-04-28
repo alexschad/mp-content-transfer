@@ -34,6 +34,7 @@ class Importer:
     bundle: Bundle
 
     def import_bundle(self) -> ImportSummary:
+        """Run the staged import pipeline and checkpoint progress after each stage item."""
         state = self._load_or_create_state()
         summary = _summary_from_state(state)
         created_sets = _created_sets_from_state(state)
@@ -59,6 +60,7 @@ class Importer:
         return summary
 
     def _load_or_create_state(self) -> dict[str, Any]:
+        """Load the resumable import checkpoint or create a new empty one."""
         existing = load_import_state_if_exists(self.bundle.root)
         if existing is not None:
             return existing
@@ -69,10 +71,12 @@ class Importer:
         }
 
     def _checkpoint(self, summary: ImportSummary, state: dict[str, Any]) -> None:
+        """Persist the current import summary and stage progress to disk."""
         state["summary"] = asdict(summary)
         save_import_state(state, self.bundle.root)
 
     def _stage_map(self, state: dict[str, Any], stage: str) -> dict[str, str]:
+        """Return the processed-item status map for a single import stage."""
         return state.setdefault("processed", {}).setdefault(stage, {})
 
     def _mark_stage(
@@ -83,10 +87,12 @@ class Importer:
         key: str,
         status: str,
     ) -> None:
+        """Record the outcome for one stage item and flush the checkpoint immediately."""
         self._stage_map(state, stage)[key] = status
         self._checkpoint(summary, state)
 
     def _ensure_import_section(self, summary: ImportSummary, state: dict[str, Any]) -> str:
+        """Find or create the fallback Import section for missing source sections."""
         if state.get("import_section_uuid"):
             return state["import_section_uuid"]
         sections = self.client.iter_collection("/sections", params={"fields": "title-uuid-urlname"})
@@ -111,6 +117,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Create file metadata records before any binary uploads are attempted."""
         stage = "files_metadata"
         for uuid, payload in _sorted_items(self.bundle.manifest.get("files", {})):
             if uuid in self._stage_map(state, stage):
@@ -130,6 +137,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Upload file binary data only for files created in this import run."""
         stage = "files_data"
         file_stage = self._stage_map(state, "files_metadata")
         for uuid, payload in _sorted_items(self.bundle.manifest.get("files", {})):
@@ -149,6 +157,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Create tags after files so feature images can already exist on the target."""
         stage = "tags"
         for uuid, payload in _sorted_items(self.bundle.manifest.get("tags", {})):
             if uuid in self._stage_map(state, stage):
@@ -173,6 +182,7 @@ class Importer:
         categories: dict[str, dict[str, Any]],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Create tag category objects before linking tags into those categories."""
         stage = "categories"
         for uuid, payload in sorted(categories.items(), key=lambda item: ((item[1].get("title") or "").lower(), item[0])):
             if uuid in self._stage_map(state, stage):
@@ -192,6 +202,7 @@ class Importer:
         state: dict[str, Any],
         categories: dict[str, dict[str, Any]],
     ) -> None:
+        """Attach tags to categories once both sides exist on the target instance."""
         stage = "tag_categories"
         existing_tags_by_category: dict[str, set[str]] = {}
         for category_uuid, payload in sorted(categories.items()):
@@ -221,6 +232,7 @@ class Importer:
         *,
         event_only: bool,
     ) -> None:
+        """Create article-like content first and event content in its dedicated stage."""
         stage = "content_events" if event_only else "content_articles"
         for uuid, payload in _sorted_content_items(self.bundle.manifest.get("content", {}), event_only=event_only):
             if uuid in self._stage_map(state, stage):
@@ -245,6 +257,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Import comments only when their parent content or parent comment already exists."""
         stage = "comments"
         pending = {uuid for uuid in self.bundle.manifest.get("comments", {}) if uuid not in self._stage_map(state, stage)}
         while pending:
@@ -277,6 +290,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Create base location objects before any location-level lists are restored."""
         stage = "locations"
         for uuid, payload in _sorted_items(self.bundle.manifest.get("locations", {})):
             if uuid in self._stage_map(state, stage):
@@ -296,6 +310,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Restore slot definitions and only fill slot media when the target list is empty."""
         stage = "slots"
         slot_map = self.bundle.manifest.get("relationships", {}).get("content_slots", {})
         for content_uuid, slots in sorted(slot_map.items()):
@@ -330,6 +345,7 @@ class Importer:
                 self._mark_stage(summary, state, stage, key, "created")
 
     def _restore_location_listing_images(self, summary: ImportSummary, state: dict[str, Any]) -> None:
+        """Restore listing image order only when the current target list is still empty."""
         stage = "location_listing_images"
         relationship_map = self.bundle.manifest.get("relationships", {}).get("location_listing_images", {})
         for location_uuid, items in sorted(relationship_map.items()):
@@ -374,6 +390,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Restore related links only when all targets exist and the target list is empty."""
         stage = "related_links"
         relationship_map = self.bundle.manifest.get("relationships", {}).get("related_links", {})
         for content_uuid, items in sorted(relationship_map.items()):
@@ -427,6 +444,7 @@ class Importer:
         state: dict[str, Any],
         created_sets: dict[str, set[str]],
     ) -> None:
+        """Restore roundup references after all referenced content and locations exist."""
         stage = "roundups"
         roundups = self.bundle.manifest.get("relationships", {}).get("roundups", {})
         location_map = roundups.get("content_to_locations", {})
@@ -458,6 +476,7 @@ class Importer:
             self._mark_stage(summary, state, stage, content_uuid, "created")
 
     def _restore_taggings(self, summary: ImportSummary, state: dict[str, Any]) -> None:
+        """Recreate tag associations for newly created parents once tags exist on the target."""
         stage = "taggings"
         for tagging in self.bundle.manifest.get("relationships", {}).get("taggings", []):
             object_uuid = tagging["object_uuid"]
@@ -478,6 +497,7 @@ class Importer:
             self._mark_stage(summary, state, stage, key, "created")
 
     def _existing_category_tag_uuids(self, category_uuid: str) -> set[str]:
+        """Read the current tag UUIDs assigned to one category on the target."""
         rows = self.client.iter_collection(f"/tags/categories/{category_uuid}/tags", params={"fields": "uuid"})
         values: set[str] = set()
         for row in rows:
@@ -488,6 +508,7 @@ class Importer:
         return values
 
     def _existing_listing_image_items(self, location_uuid: str) -> list[dict[str, str]]:
+        """Read and normalize the current ordered listing image records for one location."""
         response = self.client.get_json(f"/locations/{location_uuid}/listing_images", ok_statuses=(200, 404))
         if not response or "items" not in response:
             return []
@@ -502,6 +523,7 @@ class Importer:
         return values
 
     def _existing_related_link_items(self, content_uuid: str) -> list[dict[str, Any]]:
+        """Read and normalize the current related-link list into PUT-compatible payload items."""
         response = self.client.get_json(f"/content/{content_uuid}/related_links", ok_statuses=(200, 404))
         if not response or "items" not in response:
             return []
@@ -515,6 +537,7 @@ class Importer:
         return values
 
     def _normalize_related_link_for_put(self, item: dict[str, Any]) -> dict[str, Any] | None:
+        """Convert exported or fetched related-link rows into the canonical PUT payload form."""
         link_type = item.get("type")
         if link_type == "content" or link_type == "location":
             target_uuid = item.get("target_uuid") or item.get("uuid") or uuid_from_resource_url(item.get("url"))
@@ -532,6 +555,7 @@ class Importer:
         return None
 
     def _existing_slot_media_items(self, content_uuid: str, slot_uuid: str) -> list[Any]:
+        """Read the current media list for a slot to avoid replacing non-empty target lists."""
         response = self.client.get_json(f"/content/{content_uuid}/slots/{slot_uuid}/media", ok_statuses=(200, 404))
         if not response:
             return []
@@ -542,10 +566,12 @@ class Importer:
 
 
 def _summary_from_state(state: dict[str, Any]) -> ImportSummary:
+    """Rebuild the current summary counters from the saved import checkpoint."""
     return ImportSummary(**state.get("summary", {}))
 
 
 def _created_sets_from_state(state: dict[str, Any]) -> dict[str, set[str]]:
+    """Reconstruct which objects were created in prior runs from the stage checkpoint."""
     processed = state.get("processed", {})
     return {
         "files": {uuid for uuid, status in processed.get("files_metadata", {}).items() if status == "created"},
@@ -563,10 +589,12 @@ def _created_sets_from_state(state: dict[str, Any]) -> dict[str, set[str]]:
 
 
 def _sorted_items(values: dict[str, dict[str, Any]]) -> list[tuple[str, dict[str, Any]]]:
+    """Sort generic resource maps in a stable created-date-first order."""
     return sorted(values.items(), key=lambda item: (item[1].get("created") or "", item[0]))
 
 
 def _sorted_content_items(values: dict[str, dict[str, Any]], *, event_only: bool) -> list[tuple[str, dict[str, Any]]]:
+    """Split exported content into article-like and event subsets with stable ordering."""
     def include(payload: dict[str, Any]) -> bool:
         return payload.get("content_type") == "event" if event_only else payload.get("content_type") != "event"
 
@@ -577,6 +605,7 @@ def _sorted_content_items(values: dict[str, dict[str, Any]], *, event_only: bool
 
 
 def _collect_categories(tags: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Collapse per-tag exported category rows into unique category objects plus memberships."""
     categories: dict[str, dict[str, Any]] = {}
     for tag_uuid, payload in tags.items():
         for category in payload.get("categories", []) or []:
@@ -599,11 +628,13 @@ def _collect_categories(tags: dict[str, dict[str, Any]]) -> dict[str, dict[str, 
 
 
 def _file_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Select only the file fields that are valid for file metadata creation."""
     allowed = ["title", "description", "filename", "created", "modified", "credits"]
     return {key: data.get(key) for key in allowed if key in data and data.get(key) is not None}
 
 
 def _tag_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Select and normalize the subset of tag fields accepted by the tag PUT route."""
     allowed = [
         "urlname",
         "last_name_or_title",
@@ -629,6 +660,7 @@ def _tag_payload(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _location_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Select and normalize location fields accepted by the location PUT route."""
     allowed = [
         "urlname",
         "title",
@@ -667,6 +699,7 @@ def _location_payload(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _content_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Select and normalize content fields accepted by the content PUT route."""
     allowed = [
         "urlname",
         "content_type",
@@ -724,6 +757,7 @@ def _content_payload(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _comment_payload(data: dict[str, Any]) -> dict[str, Any]:
+    """Select and normalize comment fields accepted by the comment PUT route."""
     allowed = [
         "parent_type",
         "parent_uuid",
