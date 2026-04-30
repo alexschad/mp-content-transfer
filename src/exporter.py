@@ -40,6 +40,7 @@ class Exporter:
     def __post_init__(self) -> None:
         """Initialize per-run counters used by the top-level seed limit."""
         self._seeded_content_count = 0
+        self._seeded_comment_count = 0
         self._seeded_location_count = 0
 
     def export(self) -> Path:
@@ -140,15 +141,20 @@ class Exporter:
             params["created"] = created_filter
         rows = self.client.iter_collection("/comments", params=params)
         for row in rows:
+            if self._limit_reached("comment"):
+                return
             values = dict(zip(COMMENT_LIST_FIELDS, row))
             state.enqueue("comment", values["uuid"])
+            self._seeded_comment_count += 1
 
     def _limit_reached(self, resource_type: str) -> bool:
-        """Apply the separate top-level seed limit for content and locations."""
+        """Apply the separate top-level seed limit for content, comments, and locations."""
         if self.limit is None:
             return False
         if resource_type == "content":
             return self._seeded_content_count >= self.limit
+        if resource_type == "comment":
+            return self._seeded_comment_count >= self.limit
         if resource_type == "location":
             return self._seeded_location_count >= self.limit
         return False

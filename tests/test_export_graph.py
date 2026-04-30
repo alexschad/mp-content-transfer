@@ -373,6 +373,50 @@ class ExporterGraphTest(TestCase):
             self.assertIn("location-1", manifest)
             self.assertNotIn("location-2", manifest)
 
+    def test_exporter_limit_is_separate_for_comments_too(self) -> None:
+        class SeparateCommentLimitClient(FakeClient):
+            def iter_collection(self, path: str, params=None):
+                self.collection_calls.append((path, params))
+                if path == "/content":
+                    return []
+                if path == "/comments":
+                    return [
+                        ["comment-1", "2026-01-02T00:00:00"],
+                        ["comment-2", "2026-01-03T00:00:00"],
+                    ]
+                if path == "/locations":
+                    return []
+                return []
+
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/comments/comment-1": {
+                        "uuid": "comment-1",
+                        "parent_type": "content",
+                        "parent_uuid": "content-1",
+                        "comment": "First",
+                    },
+                    "/comments/comment-2": {
+                        "uuid": "comment-2",
+                        "parent_type": "content",
+                        "parent_uuid": "content-2",
+                        "comment": "Second",
+                    },
+                    "/content/content-1": {"uuid": "content-1", "content_type": "article"},
+                    "/content/content-1/related_links": {"items": []},
+                    "/content/content-1/tags": {"items": []},
+                    "/content/content-1/slots": {"items": []},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=SeparateCommentLimitClient(), output_dir=tmp_path, from_date="2026-01-01", limit=1)
+            export_path = exporter.export()
+            export_data = export_path.read_text(encoding="utf-8")
+            self.assertIn("comment-1", export_data)
+            self.assertNotIn("comment-2", export_data)
+
     def test_exporter_exports_related_links_and_enqueues_content_targets(self) -> None:
         class RelatedLinkClient(FakeClient):
             def get_json(self, path: str, params=None, ok_statuses=(200,)):

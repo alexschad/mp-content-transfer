@@ -15,6 +15,7 @@ Plain Python script for exporting MetroPublisher content bundles from one instan
 
 1. Copy `.env.example` to `.env` and fill in the source and target credentials.
    `MP_EXPORT_LIMIT` can be set there to cap top-level exported seed items by default.
+   The limit applies separately to top-level content, comments, and locations.
    Passing `--limit` on the command line overrides the `.env` value for that run.
    The client authenticates by exchanging `MP_*_API_KEY` and `MP_*_API_SECRET` for an OAuth access token via `MP_AUTH_PROVIDER`.
 2. Run the script directly from the repo root.
@@ -29,7 +30,7 @@ python3 mp_content_transfer.py --help
 python3 mp_content_transfer.py export --from-date 2026-01-01 --to-date 2026-01-31 --output ./bundle --limit 100
 ```
 
-`--from-date` and `--to-date` are both optional. If you pass one or both, the exporter sends the corresponding MetroPublisher `created` period filter. If you omit both, it exports all top-level seed content and locations.
+`--from-date` and `--to-date` are both optional. If you pass one or both, the exporter sends the corresponding MetroPublisher `created` period filter. If you omit both, it exports all top-level seed content, comments, and locations.
 
 If an export is interrupted, rerun it against the same output directory with:
 
