@@ -49,6 +49,9 @@ class MPClient:
     def put(self, path: str, json: dict[str, Any] | None = None, ok_statuses: tuple[int, ...] = (200,)) -> Response:
         return self._request("PUT", path, json=json, ok_statuses=ok_statuses)
 
+    def patch(self, path: str, json: dict[str, Any] | None = None, ok_statuses: tuple[int, ...] = (200,)) -> Response:
+        return self._request("PATCH", path, json=json, ok_statuses=ok_statuses)
+
     def post(
         self,
         path: str,

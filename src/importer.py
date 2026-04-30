@@ -119,7 +119,7 @@ class Importer:
         import_uuid = str(uuid4())
         self.client.put(
             f"/sections/{import_uuid}",
-            json={"title": "Import", "urlname": slugify("Import")},
+            json={"title": "Import", "urlname": slugify("Import"), "hide_in_nav": True},
         )
         state["import_section_uuid"] = import_uuid
         self._checkpoint(summary, state)
@@ -525,7 +525,7 @@ class Importer:
                 payload["roundup_locations"] = location_targets
             if content_uuid in content_map:
                 payload["roundup_content_targets"] = content_targets
-            self.client.put(f"/content/{content_uuid}", json=_content_payload(payload))
+            self.client.patch(f"/content/{content_uuid}", json=_content_payload(payload))
             summary.relationship_created += 1
             self._mark_stage(summary, state, stage, content_uuid, "created")
 
@@ -547,7 +547,11 @@ class Importer:
                 self._mark_stage(summary, state, stage, key, "missing_dependency")
                 continue
             path = f"/tags/{tag_uuid}/{predicate}/{object_uuid}"
-            self.client.put(path)
+            if self.client.resource_exists(path):
+                summary.relationship_skipped += 1
+                self._mark_stage(summary, state, stage, key, "skipped_existing")
+                continue
+            self.client.put(path, json={})
             summary.relationship_created += 1
             self._mark_stage(summary, state, stage, key, "created")
 

@@ -20,6 +20,7 @@ class FakeImportClient:
             "/tags/tag-existing": True,
         }
         self.put_calls: list[tuple[str, dict | None]] = []
+        self.patch_calls: list[tuple[str, dict | None]] = []
         self.post_calls: list[tuple[str, dict | bytes | None, dict | None]] = []
         self.section_rows = []
         self.category_tag_rows: dict[str, list[list[str]]] = {}
@@ -53,6 +54,10 @@ class FakeImportClient:
             self.existing[path] = True
         if path.startswith("/comments/"):
             self.existing[path] = True
+        return None
+
+    def patch(self, path: str, json=None, ok_statuses=(200,)):
+        self.patch_calls.append((path, json))
         return None
 
     def post(self, path: str, json=None, data=None, headers=None, ok_statuses=(200, 201)):
@@ -189,10 +194,12 @@ class ImporterTest(TestCase):
             client = FakeImportClient()
             Importer(client=client, bundle=bundle).import_bundle()
             content_puts = [payload for path, payload in client.put_calls if path == "/content/new-content"]
-            self.assertEqual(len(content_puts), 2)
+            roundup_patches = [payload for path, payload in client.patch_calls if path == "/content/new-content"]
+            self.assertEqual(len(content_puts), 1)
+            self.assertEqual(len(roundup_patches), 1)
             self.assertEqual(content_puts[0].get("roundup_locations"), [])
             self.assertEqual(content_puts[0].get("roundup_content_targets"), [])
-            self.assertEqual(set(content_puts[-1].keys()), {"roundup_content_targets"})
+            self.assertEqual(set(roundup_patches[0].keys()), {"roundup_content_targets"})
 
     def test_imports_categories_and_tag_category_links(self) -> None:
         with TemporaryDirectory() as tmp_dir:
