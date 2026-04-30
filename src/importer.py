@@ -390,6 +390,7 @@ class Importer:
                         summary.relationship_skipped += 1
                         self._mark_stage(summary, state, stage, key, "non_empty_target_list")
                         continue
+                    items = _prune_none(items)
                     self.client.put(f"/content/{content_uuid}/slots/{slot_uuid}/media", json={"items": items})
                 summary.relationship_created += 1
                 self._mark_stage(summary, state, stage, key, "created")
