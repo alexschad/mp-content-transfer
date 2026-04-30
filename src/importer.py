@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
-from .client import MPClient
+from .client import ApiError, MPClient
 from .manifest import load_import_state_if_exists, save_import_state
 from .types import Bundle, ImportSummary
 from .utils import slugify, uuid_from_resource_url
@@ -51,6 +51,8 @@ class Importer:
             self._import_categories(summary, state, categories, created_sets)
             print("Import stage: tag-category links")
             self._import_tag_categories(summary, state, categories)
+            print("Import stage: locations")
+            self._import_locations(summary, state, created_sets)
             print("Import stage: non-event content")
             self._import_content(summary, state, created_sets, event_only=False)
             print("Import stage: event content")
@@ -59,8 +61,6 @@ class Importer:
             self._restore_slots(summary, state, created_sets)
             print("Import stage: comments")
             self._import_comments(summary, state, created_sets)
-            print("Import stage: locations")
-            self._import_locations(summary, state, created_sets)
             print("Import stage: location listing images")
             self._restore_location_listing_images(summary, state)
             print("Import stage: related links")
@@ -141,6 +141,9 @@ class Importer:
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
                 continue
+            # remove later used for import testing only
+            if not payload.get("title"):
+                payload["title"] = payload.get("filename", uuid)
             self.client.put(f"/files/{uuid}", json=_file_payload(payload))
             summary.created += 1
             created_sets["files"].add(uuid)
@@ -187,7 +190,14 @@ class Importer:
             feature_image_uuid = payload.get("feature_image_uuid") or uuid_from_resource_url(payload.get("feature_image_url"))
             if feature_image_uuid:
                 payload["feature_image_uuid"] = feature_image_uuid
-            self.client.put(f"/tags/{uuid}", json=_tag_payload(payload))
+            result = self._put_with_urlname_retry(
+                path=f"/tags/{uuid}",
+                payload=_tag_payload(payload),
+            )
+            if result == "urlname_exists":
+                summary.relationship_skipped += 1
+                self._mark_stage(summary, state, stage, uuid, "urlname_exists")
+                continue
             summary.created += 1
             created_sets["tags"].add(uuid)
             self._mark_stage(summary, state, stage, uuid, "created")
@@ -266,7 +276,17 @@ class Importer:
             if section_uuid and not self.client.resource_exists(f"/sections/{section_uuid}"):
                 put_payload["section_uuid"] = self._ensure_import_section(summary, state)
                 summary.import_section_routed += 1
-            self.client.put(f"/content/{uuid}", json=_content_payload(put_payload))
+            # Roundup relationships are restored later in their own stage once all targets exist.
+            put_payload["roundup_locations"] = []
+            put_payload["roundup_content_targets"] = []
+            result = self._put_with_urlname_retry(
+                path=f"/content/{uuid}",
+                payload=_content_payload(put_payload),
+            )
+            if result == "urlname_exists":
+                summary.relationship_skipped += 1
+                self._mark_stage(summary, state, stage, uuid, "urlname_exists")
+                continue
             summary.created += 1
             created_sets["content"].add(uuid)
             self._mark_stage(summary, state, stage, uuid, "created")
@@ -321,7 +341,14 @@ class Importer:
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
                 continue
-            self.client.put(f"/locations/{uuid}", json=_location_payload(payload))
+            result = self._put_with_urlname_retry(
+                path=f"/locations/{uuid}",
+                payload=_location_payload(payload),
+            )
+            if result == "urlname_exists":
+                summary.relationship_skipped += 1
+                self._mark_stage(summary, state, stage, uuid, "urlname_exists")
+                continue
             summary.created += 1
             created_sets["locations"].add(uuid)
             self._mark_stage(summary, state, stage, uuid, "created")
@@ -591,6 +618,22 @@ class Importer:
             return []
         return items
 
+    def _put_with_urlname_retry(self, path: str, payload: dict[str, Any]) -> str:
+        """Retry PUTs with suffixed urlnames when the API rejects a duplicate urlname."""
+        current_payload = dict(payload)
+        for attempt in range(11):
+            try:
+                self.client.put(path, json=current_payload)
+                return "created"
+            except ApiError as exc:
+                if not _is_urlname_unique_error(exc) or "urlname" not in current_payload or not current_payload.get("urlname"):
+                    raise
+                if attempt >= 10:
+                    return "urlname_exists"
+                current_payload["urlname"] = _suffix_urlname(payload["urlname"], attempt + 1)
+                print(f"Retrying {path} with urlname {current_payload['urlname']}")
+        return "urlname_exists"
+
 
 def _summary_from_state(state: dict[str, Any]) -> ImportSummary:
     """Rebuild the current summary counters from the saved import checkpoint."""
@@ -695,6 +738,8 @@ def _location_payload(data: dict[str, Any]) -> dict[str, Any]:
         "coords",
         "state",
         "thumb_uuid",
+        "contact_email",
+        "contact_person",
         "street",
         "streetnumber",
         "pcode",
@@ -709,14 +754,26 @@ def _location_payload(data: dict[str, Any]) -> dict[str, Any]:
         "created",
         "modified",
         "closed",
+        "coupon_description",
+        "coupon_expires",
+        "coupon_img_uuid",
+        "coupon_start",
+        "coupon_title",
+        "is_listing",
+        "kicker",
+        "listing_expires",
+        "listing_start",
+        "location_types",
         "print_description",
         "sort_title",
+        "sponsored",
         "fb_headline",
         "fb_url",
         "fb_show_faces",
         "fb_show_stream",
         "twitter_username",
-        "coupon_img_uuid",
+        "instagram_username",
+        "linkedin_url",
     ]
     payload = {key: data.get(key) for key in allowed if key in data and data.get(key) is not None}
     thumb_uuid = data.get("thumb_uuid") or uuid_from_resource_url(data.get("thumb_url"))
@@ -767,14 +824,56 @@ def _content_payload(data: dict[str, Any]) -> dict[str, Any]:
         "print_description",
         "kicker",
         "evergreen",
+        "rating",
+        "recipe_prep_time",
+        "recipe_cook_time",
+        "recipe_yield",
+        "recipe_ingredients",
+        "recipe_image_uuid",
+        "album_title",
+        "album_image_uuid",
+        "album_issued",
+        "album_provider_urls",
+        "album_buy_urls",
+        "album_buy_url",
+        "album_buy_link_text",
+        "book_title",
+        "book_image_uuid",
+        "book_isbn",
+        "book_issued",
+        "book_provider_urls",
+        "book_buy_urls",
+        "book_buy_url",
+        "book_buy_link_text",
+        "movie_title",
+        "movie_image_uuid",
+        "movie_issued",
+        "movie_provider_urls",
+        "movie_buy_urls",
+        "movie_duration",
+        "product_title",
+        "product_image_uuid",
+        "product_issued",
+        "product_provider_urls",
+        "product_buy_urls",
+        "product_buy_url",
+        "product_buy_link_text",
         "roundup_locations",
+        "roundup_location_tour_type",
+        "roundup_location_hide_map",
         "roundup_content_targets",
+        "roundup_numbering",
+        "video_type",
+        "video_data",
     ]
     payload = {key: data.get(key) for key in allowed if key in data and data.get(key) is not None}
+    if "rating" in payload:
+        payload["rating"] = str(payload["rating"])
+    if "rrule" in payload:
+        payload["rrule"] = _prune_none(payload["rrule"])
     for url_key, uuid_key in [
         ("teaser_image_url", "teaser_image_uuid"),
         ("header_image_url", "header_image_uuid"),
-        ("feature_image_url", "feature_image_uuid"),
     ]:
         if uuid_key not in payload:
             uuid = uuid_from_resource_url(data.get(url_key))
@@ -803,3 +902,23 @@ def _comment_payload(data: dict[str, Any]) -> dict[str, Any]:
     if parent_uuid:
         payload["parent_uuid"] = parent_uuid
     return payload
+
+
+def _prune_none(value: Any) -> Any:
+    """Recursively remove None values from nested dict payloads and nested list items."""
+    if isinstance(value, dict):
+        return {key: _prune_none(inner) for key, inner in value.items() if inner is not None}
+    if isinstance(value, list):
+        return [_prune_none(inner) for inner in value if inner is not None]
+    return value
+
+
+def _is_urlname_unique_error(exc: ApiError) -> bool:
+    """Detect the specific MetroPublisher validation error for duplicate urlnames."""
+    message = str(exc)
+    return '"urlname"' in message and "must be unique for" in message
+
+
+def _suffix_urlname(base: str, attempt: int) -> str:
+    """Append the numeric retry suffix expected by the duplicate-urlname fallback."""
+    return f"{base}-{attempt}"

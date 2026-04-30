@@ -43,3 +43,5 @@ python3 mp_content_transfer.py export --from-date 2026-01-01 --to-date 2026-01-3
 ```bash
 python3 mp_content_transfer.py import --input ./bundle
 ```
+
+If an import fails, rerun the same command against the same bundle directory to resume it. Import progress is saved in `import_state.json` inside the bundle directory. If you want to restart the import from scratch, delete that `import_state.json` file first.

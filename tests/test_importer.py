@@ -8,6 +8,7 @@ from unittest import TestCase
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.importer import Importer
+from src.client import ApiError
 from src.types import Bundle
 
 
@@ -26,6 +27,7 @@ class FakeImportClient:
         self.related_link_items: dict[str, list[dict[str, str]]] = {}
         self.slot_media_items: dict[tuple[str, str], list[dict[str, str]]] = {}
         self.fail_on_put_paths: set[str] = set()
+        self.urlname_conflicts: dict[str, int] = {}
 
     def resource_exists(self, path: str) -> bool:
         return self.existing.get(path, False)
@@ -33,6 +35,9 @@ class FakeImportClient:
     def put(self, path: str, json=None, ok_statuses=(200,)):
         if path in self.fail_on_put_paths:
             raise RuntimeError(f"boom on {path}")
+        if path in self.urlname_conflicts and self.urlname_conflicts[path] > 0:
+            self.urlname_conflicts[path] -= 1
+            raise ApiError('PUT failed with 400: {"error": "bad_parameters", "error_info": {"urlname": "\'urlname\' must be unique for tags."}, "error_description": "One or more of your incoming parameters failed validation, see info for details"}')
         self.put_calls.append((path, json))
         if path.startswith("/sections/"):
             self.existing[path] = True
@@ -185,6 +190,8 @@ class ImporterTest(TestCase):
             Importer(client=client, bundle=bundle).import_bundle()
             content_puts = [payload for path, payload in client.put_calls if path == "/content/new-content"]
             self.assertEqual(len(content_puts), 2)
+            self.assertEqual(content_puts[0].get("roundup_locations"), [])
+            self.assertEqual(content_puts[0].get("roundup_content_targets"), [])
             self.assertEqual(set(content_puts[-1].keys()), {"roundup_content_targets"})
 
     def test_imports_categories_and_tag_category_links(self) -> None:
@@ -502,3 +509,88 @@ class ImporterTest(TestCase):
             resumed_tag_puts = [path for path, _ in resumed_client.put_calls if path.startswith("/tags/")]
             self.assertNotIn("/tags/tag-1", resumed_tag_puts)
             self.assertIn("/tags/tag-2", resumed_tag_puts)
+
+    def test_retries_tag_urlname_conflict_with_suffix(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "tags": {
+                        "tag-1": {
+                            "uuid": "tag-1",
+                            "urlname": "tag-1",
+                            "last_name_or_title": "Tag 1",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            client.urlname_conflicts["/tags/tag-1"] = 1
+            Importer(client=client, bundle=bundle).import_bundle()
+            tag_puts = [payload for path, payload in client.put_calls if path == "/tags/tag-1"]
+            self.assertEqual(tag_puts[-1]["urlname"], "tag-1-1")
+
+    def test_marks_tag_urlname_exists_after_too_many_conflicts(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "tags": {
+                        "tag-1": {
+                            "uuid": "tag-1",
+                            "urlname": "tag-1",
+                            "last_name_or_title": "Tag 1",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            client.urlname_conflicts["/tags/tag-1"] = 11
+            Importer(client=client, bundle=bundle).import_bundle()
+            state = (root / "import_state.json").read_text(encoding="utf-8")
+            self.assertIn('"urlname_exists"', state)
+
+    def test_retries_content_urlname_conflict_with_suffix(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "content": {
+                        "content-1": {
+                            "uuid": "content-1",
+                            "urlname": "content-1",
+                            "content_type": "article",
+                            "title": "Content 1",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            client.urlname_conflicts["/content/content-1"] = 1
+            Importer(client=client, bundle=bundle).import_bundle()
+            content_puts = [payload for path, payload in client.put_calls if path == "/content/content-1"]
+            self.assertEqual(content_puts[-1]["urlname"], "content-1-1")
+
+    def test_retries_location_urlname_conflict_with_suffix(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "locations": {
+                        "location-1": {
+                            "uuid": "location-1",
+                            "urlname": "location-1",
+                            "title": "Location 1",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            client.urlname_conflicts["/locations/location-1"] = 1
+            Importer(client=client, bundle=bundle).import_bundle()
+            location_puts = [payload for path, payload in client.put_calls if path == "/locations/location-1"]
+            self.assertEqual(location_puts[-1]["urlname"], "location-1-1")
