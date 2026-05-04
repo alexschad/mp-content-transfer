@@ -306,6 +306,42 @@ class ExporterGraphTest(TestCase):
             self.assertIn("file-1", export_data)
             self.assertIn("file-2", export_data)
 
+    def test_exporter_follows_location_coupon_image_url(self) -> None:
+        class CouponImageClient(FakeClient):
+            def iter_collection(self, path: str, params=None):
+                self.collection_calls.append((path, params))
+                if path == "/content":
+                    return []
+                if path == "/comments":
+                    return []
+                if path == "/locations":
+                    return [["location-1"]]
+                return []
+
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/locations/location-1": {
+                        "uuid": "location-1",
+                        "coupon_img_url": "https://api.metropublisher.com/123/files/file-coupon/download/1",
+                    },
+                    "/locations/location-1/listing_images": {"items": []},
+                    "/locations/location-1/tags": {"items": []},
+                    "/files/file-coupon": {
+                        "uuid": "file-coupon",
+                        "filename": "coupon.jpg",
+                        "download_url": "https://cdn.example.com/coupon.jpg",
+                    },
+                    "/files/file-coupon/tags": {"items": []},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=CouponImageClient(), output_dir=tmp_path)
+            export_path = exporter.export()
+            export_data = export_path.read_text(encoding="utf-8")
+            self.assertIn("file-coupon", export_data)
+
     def test_exporter_limit_applies_only_to_top_level_seed_items(self) -> None:
         class LimitedFakeClient(FakeClient):
             def iter_collection(self, path: str, params=None):
@@ -484,3 +520,55 @@ class ExporterGraphTest(TestCase):
             self.assertIn("People", export_data)
             self.assertIn("https://api.metropublisher.com/123/tags/categories/cat-1", export_data)
             self.assertIn('"tag_uuid": "tag-1"', export_data)
+
+    def test_exporter_follows_all_content_image_reference_fields(self) -> None:
+        class ImageFieldClient(FakeClient):
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/content/content-1": {
+                        "uuid": "content-1",
+                        "content_type": "review_book",
+                        "book_image_url": "https://api.metropublisher.com/123/files/file-book/download/1",
+                        "product_image_uuid": "file-product",
+                        "feature_thumb_url": "https://api.metropublisher.com/123/files/file-feature-thumb/download/1",
+                        "thumb_url": "https://api.metropublisher.com/123/files/file-thumb/download/1",
+                    },
+                    "/content/content-1/related_links": {"items": []},
+                    "/content/content-1/tags": {"items": []},
+                    "/content/content-1/slots": {"items": []},
+                    "/files/file-book": {
+                        "uuid": "file-book",
+                        "filename": "book.jpg",
+                        "download_url": "https://cdn.example.com/book.jpg",
+                    },
+                    "/files/file-book/tags": {"items": []},
+                    "/files/file-product": {
+                        "uuid": "file-product",
+                        "filename": "product.jpg",
+                        "download_url": "https://cdn.example.com/product.jpg",
+                    },
+                    "/files/file-product/tags": {"items": []},
+                    "/files/file-feature-thumb": {
+                        "uuid": "file-feature-thumb",
+                        "filename": "feature-thumb.jpg",
+                        "download_url": "https://cdn.example.com/feature-thumb.jpg",
+                    },
+                    "/files/file-feature-thumb/tags": {"items": []},
+                    "/files/file-thumb": {
+                        "uuid": "file-thumb",
+                        "filename": "thumb.jpg",
+                        "download_url": "https://cdn.example.com/thumb.jpg",
+                    },
+                    "/files/file-thumb/tags": {"items": []},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=ImageFieldClient(), output_dir=tmp_path, from_date="2026-01-01")
+            export_path = exporter.export()
+            export_data = export_path.read_text(encoding="utf-8")
+            self.assertIn("file-book", export_data)
+            self.assertIn("file-product", export_data)
+            self.assertIn("file-feature-thumb", export_data)
+            self.assertIn("file-thumb", export_data)

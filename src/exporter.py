@@ -173,10 +173,7 @@ class Exporter:
             return
         data = self.client.get_json(f"/content/{uuid}")
         manifest["content"][uuid] = data
-        for key in ("teaser_image_uuid", "header_image_uuid", "feature_image_uuid", "recipe_image_uuid", "album_image_uuid"):
-            state.enqueue("file", data.get(key))
-        for key in ("teaser_image_url", "header_image_url", "feature_image_url", "recipe_image_url", "album_image_url"):
-            state.enqueue("file", uuid_from_resource_url(data.get(key)))
+        self._enqueue_direct_file_references(data, state)
         state.enqueue("location", data.get("location_uuid"))
         for roundup in data.get("roundup_locations", []) or []:
             location_uuid = roundup.get("location_uuid") or roundup.get("target_uuid")
@@ -190,15 +187,21 @@ class Exporter:
         self._export_content_tags(uuid, manifest, state)
         self._export_slots(uuid, manifest, state)
 
+    def _enqueue_direct_file_references(self, data: dict[str, Any], state: GraphState) -> None:
+        """Follow all direct image, img, and thumb file reference fields on a resource payload."""
+        for key, value in data.items():
+            if key.endswith(("_image_uuid", "_img_uuid", "thumb_uuid")):
+                state.enqueue("file", value)
+            elif key.endswith(("_image_url", "_img_url", "thumb_url")):
+                state.enqueue("file", uuid_from_resource_url(value))
+
     def _export_location(self, uuid: str, manifest: dict, state: GraphState) -> None:
         """Export one location together with its direct files, listing images, and tags."""
         if uuid in manifest["locations"]:
             return
         data = self.client.get_json(f"/locations/{uuid}")
         manifest["locations"][uuid] = data
-        state.enqueue("file", data.get("thumb_uuid"))
-        state.enqueue("file", uuid_from_resource_url(data.get("thumb_url")))
-        state.enqueue("file", data.get("coupon_img_uuid"))
+        self._enqueue_direct_file_references(data, state)
         self._export_location_listing_images(uuid, manifest, state)
         self._export_object_tags(resource_path=f"/locations/{uuid}/tags", object_type="location", object_uuid=uuid, manifest=manifest, state=state)
 
@@ -209,7 +212,7 @@ class Exporter:
         data = self.client.get_json(f"/tags/{uuid}")
         data["categories"] = self._export_tag_categories(uuid)
         manifest["tags"][uuid] = data
-        state.enqueue("file", data.get("feature_image_uuid") or uuid_from_resource_url(data.get("feature_image_url")))
+        self._enqueue_direct_file_references(data, state)
 
     def _export_comment(self, uuid: str, manifest: dict, state: GraphState) -> None:
         """Export one comment and follow its parent content or parent comment."""
