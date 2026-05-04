@@ -28,6 +28,15 @@ LOCATION_LIST_FIELDS = [
     # "created",
 ]
 
+DEPRECATED_CONTENT_FIELDS = {
+    "album_buy_url",
+    "album_buy_link_text",
+    "book_buy_url",
+    "book_buy_link_text",
+    "product_buy_url",
+    "product_buy_link_text",
+}
+
 @dataclass
 class Exporter:
     client: MPClient
@@ -172,6 +181,8 @@ class Exporter:
         if uuid in manifest["content"]:
             return
         data = self.client.get_json(f"/content/{uuid}")
+        for key in DEPRECATED_CONTENT_FIELDS:
+            data.pop(key, None)
         manifest["content"][uuid] = data
         self._enqueue_direct_file_references(data, state)
         state.enqueue("location", data.get("location_uuid"))

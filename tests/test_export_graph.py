@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -572,3 +573,42 @@ class ExporterGraphTest(TestCase):
             self.assertIn("file-product", export_data)
             self.assertIn("file-feature-thumb", export_data)
             self.assertIn("file-thumb", export_data)
+
+    def test_exporter_omits_deprecated_scalar_buy_url_fields(self) -> None:
+        class DeprecatedBuyFieldClient(FakeClient):
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                mapping = {
+                    "/content/content-1": {
+                        "uuid": "content-1",
+                        "content_type": "review_book",
+                        "book_buy_url": "https://example.com/book",
+                        "book_buy_link_text": "Buy book",
+                        "book_buy_urls": [{"url": "https://example.com/book", "link_text": "Buy book"}],
+                        "product_buy_url": "https://example.com/product",
+                        "product_buy_link_text": "Buy product",
+                        "product_buy_urls": [{"url": "https://example.com/product", "link_text": "Buy product"}],
+                        "album_buy_url": "https://example.com/album",
+                        "album_buy_link_text": "Buy album",
+                        "album_buy_urls": [{"url": "https://example.com/album", "link_text": "Buy album"}],
+                    },
+                    "/content/content-1/related_links": {"items": []},
+                    "/content/content-1/tags": {"items": []},
+                    "/content/content-1/slots": {"items": []},
+                }
+                return mapping.get(path, {"items": []})
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=DeprecatedBuyFieldClient(), output_dir=tmp_path, from_date="2026-01-01")
+            export_path = exporter.export()
+            export_data = json.loads(export_path.read_text(encoding="utf-8"))
+            content = export_data["content"]["content-1"]
+            self.assertIn("book_buy_urls", content)
+            self.assertIn("product_buy_urls", content)
+            self.assertIn("album_buy_urls", content)
+            self.assertNotIn("book_buy_url", content)
+            self.assertNotIn("book_buy_link_text", content)
+            self.assertNotIn("product_buy_url", content)
+            self.assertNotIn("product_buy_link_text", content)
+            self.assertNotIn("album_buy_url", content)
+            self.assertNotIn("album_buy_link_text", content)
