@@ -879,6 +879,11 @@ def _content_payload(data: dict[str, Any]) -> dict[str, Any]:
     for url_key, uuid_key in [
         ("teaser_image_url", "teaser_image_uuid"),
         ("header_image_url", "header_image_uuid"),
+        ("recipe_image_url", "recipe_image_uuid"),
+        ("album_image_url", "album_image_uuid"),
+        ("book_image_url", "book_image_uuid"),
+        ("movie_image_url", "movie_image_uuid"),
+        ("product_image_url", "product_image_uuid"),
     ]:
         if uuid_key not in payload:
             uuid = uuid_from_resource_url(data.get(url_key))
