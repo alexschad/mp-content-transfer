@@ -804,6 +804,7 @@ def _content_payload(data: dict[str, Any]) -> dict[str, Any]:
         "state",
         "meta_title",
         "meta_description",
+        "header_code",
         "teaser_image_uuid",
         "header_image_uuid",
         "section_uuid",

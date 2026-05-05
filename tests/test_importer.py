@@ -185,6 +185,29 @@ class ImporterTest(TestCase):
             self.assertEqual(content_puts[0][1].get("book_image_uuid"), "12345678-1234-1234-1234-123456789abc")
             self.assertNotIn("book_image_url", content_puts[0][1])
 
+    def test_content_import_preserves_header_code(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "content": {
+                        "new-content": {
+                            "uuid": "new-content",
+                            "urlname": "new-content",
+                            "content_type": "article",
+                            "title": "New Content",
+                            "header_code": "<script>console.log('hello');</script>",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            Importer(client=client, bundle=bundle).import_bundle()
+            content_puts = [call for call in client.put_calls if call[0] == "/content/new-content"]
+            self.assertEqual(len(content_puts), 1)
+            self.assertEqual(content_puts[0][1].get("header_code"), "<script>console.log('hello');</script>")
+
     def test_restore_roundups_puts_only_roundup_fields(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
