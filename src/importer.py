@@ -804,6 +804,8 @@ def _content_payload(data: dict[str, Any]) -> dict[str, Any]:
         "state",
         "meta_title",
         "meta_description",
+        "og_title",
+        "og_description",
         "header_code",
         "teaser_image_uuid",
         "header_image_uuid",
@@ -926,8 +928,12 @@ def _prune_none(value: Any) -> Any:
 
 def _is_urlname_unique_error(exc: ApiError) -> bool:
     """Detect the specific MetroPublisher validation error for duplicate urlnames."""
-    message = str(exc)
-    return '"urlname"' in message and "must be unique for" in message
+    message = str(exc).lower()
+    return (
+        ("urlname not unique within section" in message)
+        or ("urlname must be unique within blog" in message)
+        or ("urlname must be unique for events" in message)
+    )
 
 
 def _suffix_urlname(base: str, attempt: int) -> str:

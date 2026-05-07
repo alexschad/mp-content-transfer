@@ -29,6 +29,7 @@ class FakeImportClient:
         self.slot_media_items: dict[tuple[str, str], list[dict[str, str]]] = {}
         self.fail_on_put_paths: set[str] = set()
         self.urlname_conflicts: dict[str, int] = {}
+        self.urlname_conflict_errors: dict[str, str] = {}
 
     def resource_exists(self, path: str) -> bool:
         return self.existing.get(path, False)
@@ -38,7 +39,12 @@ class FakeImportClient:
             raise RuntimeError(f"boom on {path}")
         if path in self.urlname_conflicts and self.urlname_conflicts[path] > 0:
             self.urlname_conflicts[path] -= 1
-            raise ApiError('PUT failed with 400: {"error": "bad_parameters", "error_info": {"urlname": "\'urlname\' must be unique for tags."}, "error_description": "One or more of your incoming parameters failed validation, see info for details"}')
+            raise ApiError(
+                self.urlname_conflict_errors.get(
+                    path,
+                    'PUT failed with 400: {"error": "bad_parameters", "error_info": {"urlname": "URLName not unique within section."}, "error_description": "One or more of your incoming parameters failed validation, see info for details"}',
+                )
+            )
         self.put_calls.append((path, json))
         if path.startswith("/sections/"):
             self.existing[path] = True
@@ -207,6 +213,31 @@ class ImporterTest(TestCase):
             content_puts = [call for call in client.put_calls if call[0] == "/content/new-content"]
             self.assertEqual(len(content_puts), 1)
             self.assertEqual(content_puts[0][1].get("header_code"), "<script>console.log('hello');</script>")
+
+    def test_content_import_preserves_open_graph_fields(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "content": {
+                        "new-content": {
+                            "uuid": "new-content",
+                            "urlname": "new-content",
+                            "content_type": "article",
+                            "title": "New Content",
+                            "og_title": "Share title",
+                            "og_description": "Share description",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            Importer(client=client, bundle=bundle).import_bundle()
+            content_puts = [call for call in client.put_calls if call[0] == "/content/new-content"]
+            self.assertEqual(len(content_puts), 1)
+            self.assertEqual(content_puts[0][1].get("og_title"), "Share title")
+            self.assertEqual(content_puts[0][1].get("og_description"), "Share description")
 
     def test_restore_roundups_puts_only_roundup_fields(self) -> None:
         with TemporaryDirectory() as tmp_dir:
@@ -627,6 +658,60 @@ class ImporterTest(TestCase):
             Importer(client=client, bundle=bundle).import_bundle()
             content_puts = [payload for path, payload in client.put_calls if path == "/content/content-1"]
             self.assertEqual(content_puts[-1]["urlname"], "content-1-1")
+
+    def test_retries_content_section_scoped_urlname_conflict_with_suffix(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "content": {
+                        "content-1": {
+                            "uuid": "content-1",
+                            "urlname": "content-1",
+                            "content_type": "article",
+                            "title": "Content 1",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            client.urlname_conflicts["/content/content-1"] = 1
+            client.urlname_conflict_errors["/content/content-1"] = (
+                'PUT failed with 400: {"error": "bad_parameters", '
+                '"error_description": "One or more of your incoming parameters failed validation, see info for details", '
+                '"error_info": {"urlname": "URLName not unique within section."}}'
+            )
+            Importer(client=client, bundle=bundle).import_bundle()
+            content_puts = [payload for path, payload in client.put_calls if path == "/content/content-1"]
+            self.assertEqual(content_puts[-1]["urlname"], "content-1-1")
+
+    def test_retries_event_urlname_conflict_with_suffix(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "content": {
+                        "event-1": {
+                            "uuid": "event-1",
+                            "urlname": "event-1",
+                            "content_type": "event",
+                            "title": "Event 1",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            client.urlname_conflicts["/content/event-1"] = 1
+            client.urlname_conflict_errors["/content/event-1"] = (
+                'PUT failed with 400: {"error": "bad_parameters", '
+                '"error_info": {"urlname": "URLName must be unique for events."}, '
+                '"error_description": "One or more of your incoming parameters failed validation, see info for details"}'
+            )
+            Importer(client=client, bundle=bundle).import_bundle()
+            event_puts = [payload for path, payload in client.put_calls if path == "/content/event-1"]
+            self.assertEqual(event_puts[-1]["urlname"], "event-1-1")
 
     def test_retries_location_urlname_conflict_with_suffix(self) -> None:
         with TemporaryDirectory() as tmp_dir:

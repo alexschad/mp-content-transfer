@@ -63,6 +63,27 @@ class ExporterGraphTest(TestCase):
             self.assertIn("content-2", manifest)
             self.assertIn("location-1", manifest)
 
+    def test_exporter_preserves_open_graph_fields_in_content_payload(self) -> None:
+        class OGClient(FakeClient):
+            def get_json(self, path: str, params=None, ok_statuses=(200,)):
+                if path == "/content/content-1":
+                    return {
+                        "uuid": "content-1",
+                        "content_type": "article",
+                        "og_title": "Share title",
+                        "og_description": "Share description",
+                    }
+                return super().get_json(path, params=params, ok_statuses=ok_statuses)
+
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            exporter = Exporter(client=OGClient(), output_dir=tmp_path, from_date="2026-01-01")
+            export_path = exporter.export()
+            export_data = json.loads(export_path.read_text(encoding="utf-8"))
+            content = export_data["content"]["content-1"]
+            self.assertEqual(content.get("og_title"), "Share title")
+            self.assertEqual(content.get("og_description"), "Share description")
+
     def test_exporter_uses_created_filter_for_seed_queries(self) -> None:
         with TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

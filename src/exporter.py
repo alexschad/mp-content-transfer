@@ -173,7 +173,7 @@ class Exporter:
         if not self.from_date and not self.to_date:
             return None
         start = f"{self.from_date}T00:00:00" if self.from_date else ""
-        end = f"{self.to_date}T00:00:00" if self.to_date else ""
+        end = f"{self.to_date}T23:59:59" if self.to_date else ""
         return f"{start}_{end}"
 
     def _export_content(self, uuid: str, manifest: dict, state: GraphState) -> None:
