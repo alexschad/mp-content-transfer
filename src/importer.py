@@ -704,7 +704,7 @@ def _collect_categories(tags: dict[str, dict[str, Any]]) -> dict[str, dict[str, 
 
 def _file_payload(data: dict[str, Any]) -> dict[str, Any]:
     """Select only the file fields that are valid for file metadata creation."""
-    allowed = ["title", "description", "filename", "created", "modified", "credits"]
+    allowed = ["title", "description", "filename", "created", "modified", "credits", "focal_point", "img_quality"]
     return {key: data.get(key) for key in allowed if key in data and data.get(key) is not None}
 
 
@@ -764,6 +764,7 @@ def _location_payload(data: dict[str, Any]) -> dict[str, Any]:
         "coupon_img_uuid",
         "coupon_start",
         "coupon_title",
+        "coupon_url",
         "is_listing",
         "kicker",
         "listing_expires",
@@ -779,6 +780,15 @@ def _location_payload(data: dict[str, Any]) -> dict[str, Any]:
         "twitter_username",
         "instagram_username",
         "linkedin_url",
+        "video_title",
+        "video_ref",
+        "video_type",
+        "og_title",
+        "og_description",
+        "meta_title",
+        "meta_description",
+        "reservation_url",
+        "reservation_url_text",
     ]
     payload = {key: data.get(key) for key in allowed if key in data and data.get(key) is not None}
     thumb_uuid = data.get("thumb_uuid") or uuid_from_resource_url(data.get("thumb_url"))
@@ -873,6 +883,7 @@ def _content_payload(data: dict[str, Any]) -> dict[str, Any]:
         "roundup_numbering",
         "video_type",
         "video_data",
+        "event_source",
     ]
     payload = {key: data.get(key) for key in allowed if key in data and data.get(key) is not None}
     if "rating" in payload:
