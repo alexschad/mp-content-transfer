@@ -6,7 +6,7 @@ import random
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode
 from urllib.request import Request, urlopen
 
 from .config import EndpointConfig, RetryConfig
@@ -195,10 +195,7 @@ class MPClient:
 
 def _merge_next_params(next_fragment: str, current: dict[str, Any]) -> dict[str, Any]:
     new_params = dict(current)
-    for pair in next_fragment.split("&"):
-        if "=" not in pair:
-            continue
-        key, value = pair.split("=", 1)
+    for key, value in parse_qsl(next_fragment, keep_blank_values=True):
         if value.isdigit():
             new_params[key] = int(value)
         else:
