@@ -944,6 +944,7 @@ def _is_urlname_unique_error(exc: ApiError) -> bool:
         ("urlname not unique within section" in message)
         or ("urlname must be unique within blog" in message)
         or ("urlname must be unique for events" in message)
+        or ("'urlname' must be unique for tags" in message)
     )
 
 

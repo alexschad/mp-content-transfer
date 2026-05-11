@@ -733,3 +733,30 @@ class ImporterTest(TestCase):
             Importer(client=client, bundle=bundle).import_bundle()
             location_puts = [payload for path, payload in client.put_calls if path == "/locations/location-1"]
             self.assertEqual(location_puts[-1]["urlname"], "location-1-1")
+
+    def test_retries_tag_urlname_conflict_with_suffix(self) -> None:
+        with TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            bundle = make_bundle(
+                root,
+                {
+                    "tags": {
+                        "tag-1": {
+                            "uuid": "tag-1",
+                            "urlname": "tag-1",
+                            "last_name_or_title": "Tag 1",
+                            "type": "default",
+                        }
+                    }
+                },
+            )
+            client = FakeImportClient()
+            client.urlname_conflicts["/tags/tag-1"] = 1
+            client.urlname_conflict_errors["/tags/tag-1"] = (
+                'PUT failed with 400: {"error": "bad_parameters", '
+                "\"error_info\": {\"urlname\": \"'urlname' must be unique for tags.\"}, "
+                '"error_description": "One or more of your incoming parameters failed validation, see info for details"}'
+            )
+            Importer(client=client, bundle=bundle).import_bundle()
+            tag_puts = [payload for path, payload in client.put_calls if path == "/tags/tag-1"]
+            self.assertEqual(tag_puts[-1]["urlname"], "tag-1-1")
