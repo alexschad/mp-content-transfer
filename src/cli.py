@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from .client import MPClient
@@ -103,6 +104,8 @@ def main() -> None:
     settings = load_settings()
 
     if args.command == "export":
+        started_at = datetime.now().astimezone()
+        print(f"Export started at {started_at.isoformat()}")
         client = MPClient.create(settings.source, settings.retry, settings.auth_provider)
         exporter = Exporter(
             client=client,
@@ -113,12 +116,18 @@ def main() -> None:
             resume=args.resume,
         )
         export_path = exporter.export()
+        finished_at = datetime.now().astimezone()
+        print(f"Export finished at {finished_at.isoformat()}")
         print(f"Exported bundle to {export_path}")
         return
 
+    started_at = datetime.now().astimezone()
+    print(f"Import started at {started_at.isoformat()}")
     client = MPClient.create(settings.target, settings.retry, settings.auth_provider)
     bundle = load_bundle(Path(args.input))
     summary = Importer(client=client, bundle=bundle).import_bundle()
+    finished_at = datetime.now().astimezone()
+    print(f"Import finished at {finished_at.isoformat()}")
     print(
         "Import summary: "
         f"created={summary.created} "
