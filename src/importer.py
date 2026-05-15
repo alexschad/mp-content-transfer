@@ -141,9 +141,6 @@ class Importer:
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
                 continue
-            # remove later used for import testing only
-            if not payload.get("title"):
-                payload["title"] = payload.get("filename", uuid)
             self.client.put(f"/files/{uuid}", json=_file_payload(payload))
             summary.created += 1
             created_sets["files"].add(uuid)
