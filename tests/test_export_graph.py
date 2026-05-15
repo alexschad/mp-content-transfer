@@ -141,7 +141,7 @@ class ExporterGraphTest(TestCase):
                 "/content",
                 {
                     "fields": "uuid-content_type-modified-created",
-                    "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
+                    "created": "2026-01-01T00:00:00_2026-01-31T23:59:59",
                     "order": "created.asc",
                 },
             ),
@@ -153,7 +153,7 @@ class ExporterGraphTest(TestCase):
                 {
                     "fields": "uuid-created",
                     "order": "created.asc",
-                    "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
+                    "created": "2026-01-01T00:00:00_2026-01-31T23:59:59",
                 },
             ),
         )
@@ -163,7 +163,7 @@ class ExporterGraphTest(TestCase):
                 "/locations",
                 {
                     "fields": "uuid",
-                    "created": "2026-01-01T00:00:00_2026-01-31T00:00:00",
+                    "created": "2026-01-01T00:00:00_2026-01-31T23:59:59",
                     "order": "created.asc",
                 },
             ),
@@ -181,7 +181,7 @@ class ExporterGraphTest(TestCase):
                 "/content",
                 {
                     "fields": "uuid-content_type-modified-created",
-                    "created": "_2026-01-31T00:00:00",
+                    "created": "_2026-01-31T23:59:59",
                     "order": "created.asc",
                 },
             ),
@@ -193,7 +193,7 @@ class ExporterGraphTest(TestCase):
                 {
                     "fields": "uuid-created",
                     "order": "created.asc",
-                    "created": "_2026-01-31T00:00:00",
+                    "created": "_2026-01-31T23:59:59",
                 },
             ),
         )
@@ -203,7 +203,7 @@ class ExporterGraphTest(TestCase):
                 "/locations",
                 {
                     "fields": "uuid",
-                    "created": "_2026-01-31T00:00:00",
+                    "created": "_2026-01-31T23:59:59",
                     "order": "created.asc",
                 },
             ),

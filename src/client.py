@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http.client import IncompleteRead
 import json
 import random
 import time
@@ -14,6 +15,10 @@ from .rate_limit import RateLimiter
 
 
 class ApiError(RuntimeError):
+    pass
+
+
+class RetryableTransportError(ApiError):
     pass
 
 
@@ -111,7 +116,14 @@ class MPClient:
         attempt = 0
         while True:
             self.limiter.acquire()
-            response = self._send(method=method, url=url, params=params, json_body=json, data=data, headers=merged_headers)
+            try:
+                response = self._send(method=method, url=url, params=params, json_body=json, data=data, headers=merged_headers)
+            except RetryableTransportError as exc:
+                if attempt >= self.retry.retry_count:
+                    raise ApiError(f"{method} {url} failed: {exc}") from exc
+                self._sleep_before_retry(attempt, {})
+                attempt += 1
+                continue
             if response.status_code in ok_statuses:
                 return response
             if response.status_code == 401 and (not absolute or include_auth):
@@ -119,15 +131,7 @@ class MPClient:
                 merged_headers["Authorization"] = f"bearer {self._get_access_token()}"
             if response.status_code not in {401, 429, 500, 502, 503, 504} or attempt >= self.retry.retry_count:
                 raise ApiError(f"{method} {url} failed with {response.status_code}: {response.text[:500]}")
-            delay = min(self.retry.backoff_base_seconds * (2**attempt), self.retry.backoff_max_seconds)
-            delay += random.uniform(0, self.retry.backoff_jitter_seconds)
-            retry_after = response.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    delay = max(delay, float(retry_after))
-                except ValueError:
-                    pass
-            time.sleep(delay)
+            self._sleep_before_retry(attempt, response.headers)
             attempt += 1
 
     def _send(
@@ -162,8 +166,10 @@ class MPClient:
                 content=exc.read(),
                 headers=dict(exc.headers.items()),
             )
+        except IncompleteRead as exc:
+            raise RetryableTransportError(f"{method} {url} failed: incomplete read ({len(exc.partial)} bytes received)") from exc
         except URLError as exc:
-            raise ApiError(f"{method} {url} failed: {exc}") from exc
+            raise RetryableTransportError(f"{method} {url} failed: {exc}") from exc
 
     def _get_access_token(self) -> str:
         if self.access_token:
@@ -191,6 +197,17 @@ class MPClient:
             raise ApiError("Token response did not include access_token")
         self.access_token = access_token
         return access_token
+
+    def _sleep_before_retry(self, attempt: int, headers: dict[str, str]) -> None:
+        delay = min(self.retry.backoff_base_seconds * (2**attempt), self.retry.backoff_max_seconds)
+        delay += random.uniform(0, self.retry.backoff_jitter_seconds)
+        retry_after = headers.get("Retry-After")
+        if retry_after:
+            try:
+                delay = max(delay, float(retry_after))
+            except ValueError:
+                pass
+        time.sleep(delay)
 
 
 def _merge_next_params(next_fragment: str, current: dict[str, Any]) -> dict[str, Any]:
