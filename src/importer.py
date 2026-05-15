@@ -105,6 +105,11 @@ class Importer:
         self._stage_map(state, stage)[key] = status
         self._checkpoint(summary, state)
 
+    def _progress_label(self, state: dict[str, Any], stage: str, total: int) -> str:
+        """Return the current 1-based progress label for a stage item."""
+        current = len(self._stage_map(state, stage)) + 1
+        return f"{current} of {total}"
+
     def _ensure_import_section(self, summary: ImportSummary, state: dict[str, Any]) -> str:
         """Find or create the fallback Import section for missing source sections."""
         if state.get("import_section_uuid"):
@@ -133,10 +138,11 @@ class Importer:
     ) -> None:
         """Create file metadata records before any binary uploads are attempted."""
         stage = "files_metadata"
+        total = len(self.bundle.manifest.get("files", {}))
         for uuid, payload in _sorted_items(self.bundle.manifest.get("files", {})):
             if uuid in self._stage_map(state, stage):
                 continue
-            print(f"Importing file metadata {uuid}")
+            print(f"Importing file metadata {self._progress_label(state, stage, total)}: {uuid}")
             if self.client.resource_exists(f"/files/{uuid}"):
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
@@ -155,13 +161,14 @@ class Importer:
         """Upload file binary data only for files created in this import run."""
         stage = "files_data"
         file_stage = self._stage_map(state, "files_metadata")
+        total = len(self.bundle.manifest.get("files", {}))
         for uuid, payload in _sorted_items(self.bundle.manifest.get("files", {})):
             if uuid in self._stage_map(state, stage):
                 continue
             if file_stage.get(uuid) != "created":
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
                 continue
-            print(f"Uploading file binary {uuid}")
+            print(f"Uploading file binary {self._progress_label(state, stage, total)}: {uuid}")
             file_bytes = (self.bundle.root / payload["local_path"]).read_bytes()
             self.client.post(f"/files/{uuid}", data=file_bytes, headers={"Content-Type": payload["mimetype"]})
             created_sets["files"].add(uuid)
@@ -175,10 +182,11 @@ class Importer:
     ) -> None:
         """Create tags after files so feature images can already exist on the target."""
         stage = "tags"
+        total = len(self.bundle.manifest.get("tags", {}))
         for uuid, payload in _sorted_items(self.bundle.manifest.get("tags", {})):
             if uuid in self._stage_map(state, stage):
                 continue
-            print(f"Importing tag {uuid}")
+            print(f"Importing tag {self._progress_label(state, stage, total)}: {uuid}")
             if self.client.resource_exists(f"/tags/{uuid}"):
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
@@ -208,10 +216,11 @@ class Importer:
     ) -> None:
         """Create tag category objects before linking tags into those categories."""
         stage = "categories"
+        total = len(categories)
         for uuid, payload in sorted(categories.items(), key=lambda item: ((item[1].get("title") or "").lower(), item[0])):
             if uuid in self._stage_map(state, stage):
                 continue
-            print(f"Importing tag category {uuid}")
+            print(f"Importing tag category {self._progress_label(state, stage, total)}: {uuid}")
             if self.client.resource_exists(f"/tags/categories/{uuid}"):
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
@@ -230,12 +239,13 @@ class Importer:
         """Attach tags to categories once both sides exist on the target instance."""
         stage = "tag_categories"
         existing_tags_by_category: dict[str, set[str]] = {}
+        total = sum(len(payload["tag_uuids"]) for payload in categories.values())
         for category_uuid, payload in sorted(categories.items()):
             for tag_uuid in sorted(payload["tag_uuids"]):
                 key = f"{category_uuid}:{tag_uuid}"
                 if key in self._stage_map(state, stage):
                     continue
-                print(f"Linking tag {tag_uuid} to category {category_uuid}")
+                print(f"Linking tag {self._progress_label(state, stage, total)}: {tag_uuid} to category {category_uuid}")
                 if not self.client.resource_exists(f"/tags/categories/{category_uuid}") or not self.client.resource_exists(f"/tags/{tag_uuid}"):
                     summary.relationship_skipped += 1
                     self._mark_stage(summary, state, stage, key, "missing_dependency")
@@ -260,10 +270,12 @@ class Importer:
     ) -> None:
         """Create article-like content first and event content in its dedicated stage."""
         stage = "content_events" if event_only else "content_articles"
-        for uuid, payload in _sorted_content_items(self.bundle.manifest.get("content", {}), event_only=event_only):
+        items = _sorted_content_items(self.bundle.manifest.get("content", {}), event_only=event_only)
+        total = len(items)
+        for uuid, payload in items:
             if uuid in self._stage_map(state, stage):
                 continue
-            print(f"Importing content {uuid}")
+            print(f"Importing content {self._progress_label(state, stage, total)}: {uuid}")
             if self.client.resource_exists(f"/content/{uuid}"):
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
@@ -296,13 +308,14 @@ class Importer:
     ) -> None:
         """Import comments only when their parent content or parent comment already exists."""
         stage = "comments"
+        total = len(self.bundle.manifest.get("comments", {}))
         pending = {uuid for uuid in self.bundle.manifest.get("comments", {}) if uuid not in self._stage_map(state, stage)}
         while pending:
             progressed = False
             for uuid, payload in _sorted_items(self.bundle.manifest.get("comments", {})):
                 if uuid not in pending:
                     continue
-                print(f"Importing comment {uuid}")
+                print(f"Importing comment {self._progress_label(state, stage, total)}: {uuid}")
                 parent_type = payload.get("parent_type")
                 parent_uuid = payload.get("parent_uuid") or uuid_from_resource_url(payload.get("parent_url"))
                 parent_path = RESOURCE_PATHS.get(parent_type, "").format(uuid=parent_uuid) if parent_uuid else ""
@@ -330,10 +343,11 @@ class Importer:
     ) -> None:
         """Create base location objects before any location-level lists are restored."""
         stage = "locations"
+        total = len(self.bundle.manifest.get("locations", {}))
         for uuid, payload in _sorted_items(self.bundle.manifest.get("locations", {})):
             if uuid in self._stage_map(state, stage):
                 continue
-            print(f"Importing location {uuid}")
+            print(f"Importing location {self._progress_label(state, stage, total)}: {uuid}")
             if self.client.resource_exists(f"/locations/{uuid}"):
                 summary.skipped_existing += 1
                 self._mark_stage(summary, state, stage, uuid, "skipped_existing")
@@ -359,6 +373,7 @@ class Importer:
         """Restore slot definitions and only fill slot media when the target list is empty."""
         stage = "slots"
         slot_map = self.bundle.manifest.get("relationships", {}).get("content_slots", {})
+        total = sum(len(slots) for slots in slot_map.values())
         for content_uuid, slots in sorted(slot_map.items()):
             for record in slots:
                 slot = record.get("slot", {})
@@ -369,7 +384,7 @@ class Importer:
                 key = f"{content_uuid}:{slot_uuid}"
                 if key in self._stage_map(state, stage):
                     continue
-                print(f"Restoring slot {slot_uuid} for content {content_uuid}")
+                print(f"Restoring slot {self._progress_label(state, stage, total)}: {slot_uuid} for content {content_uuid}")
                 if content_uuid not in created_sets["content"]:
                     summary.relationship_skipped += 1
                     self._mark_stage(summary, state, stage, key, "skipped_existing_parent")
@@ -396,10 +411,11 @@ class Importer:
         """Restore listing image order only when the current target list is still empty."""
         stage = "location_listing_images"
         relationship_map = self.bundle.manifest.get("relationships", {}).get("location_listing_images", {})
+        total = len(relationship_map)
         for location_uuid, items in sorted(relationship_map.items()):
             if location_uuid in self._stage_map(state, stage):
                 continue
-            print(f"Restoring listing images for location {location_uuid}")
+            print(f"Restoring listing images {self._progress_label(state, stage, total)}: for location {location_uuid}")
             desired_items: list[dict[str, str]] = []
             missing_dependency = False
             for item in items:
@@ -442,10 +458,11 @@ class Importer:
         """Restore related links only when all targets exist and the target list is empty."""
         stage = "related_links"
         relationship_map = self.bundle.manifest.get("relationships", {}).get("related_links", {})
+        total = len(relationship_map)
         for content_uuid, items in sorted(relationship_map.items()):
             if content_uuid in self._stage_map(state, stage):
                 continue
-            print(f"Restoring related links for content {content_uuid}")
+            print(f"Restoring related links {self._progress_label(state, stage, total)}: for content {content_uuid}")
             if content_uuid not in created_sets["content"]:
                 summary.relationship_skipped += 1
                 self._mark_stage(summary, state, stage, content_uuid, "skipped_existing_parent")
@@ -499,10 +516,12 @@ class Importer:
         roundups = self.bundle.manifest.get("relationships", {}).get("roundups", {})
         location_map = roundups.get("content_to_locations", {})
         content_map = roundups.get("content_to_content", {})
-        for content_uuid in sorted(set(location_map) | set(content_map)):
+        content_uuids = sorted(set(location_map) | set(content_map))
+        total = len(content_uuids)
+        for content_uuid in content_uuids:
             if content_uuid in self._stage_map(state, stage):
                 continue
-            print(f"Restoring roundups for content {content_uuid}")
+            print(f"Restoring roundups {self._progress_label(state, stage, total)}: for content {content_uuid}")
             if content_uuid not in created_sets["content"]:
                 summary.relationship_skipped += 1
                 self._mark_stage(summary, state, stage, content_uuid, "skipped_existing_parent")
@@ -529,7 +548,9 @@ class Importer:
     def _restore_taggings(self, summary: ImportSummary, state: dict[str, Any]) -> None:
         """Recreate tag associations for newly created parents once tags exist on the target."""
         stage = "taggings"
-        for tagging in self.bundle.manifest.get("relationships", {}).get("taggings", []):
+        taggings = self.bundle.manifest.get("relationships", {}).get("taggings", [])
+        total = len(taggings)
+        for tagging in taggings:
             object_uuid = tagging["object_uuid"]
             object_type = tagging["object_type"]
             tag_uuid = tagging["tag_uuid"]
@@ -537,7 +558,7 @@ class Importer:
             key = f"{object_type}:{object_uuid}:{predicate}:{tag_uuid}"
             if key in self._stage_map(state, stage):
                 continue
-            print(f"Restoring tagging {predicate} tag={tag_uuid} object={object_type}:{object_uuid}")
+            print(f"Restoring tagging {self._progress_label(state, stage, total)}: {predicate} tag={tag_uuid} object={object_type}:{object_uuid}")
             object_path = TAGGING_PATHS.get(object_type, "").format(object_uuid=object_uuid)
             if not object_path or not self.client.resource_exists(object_path) or not self.client.resource_exists(f"/tags/{tag_uuid}"):
                 summary.relationship_skipped += 1
